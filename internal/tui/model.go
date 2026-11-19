@@ -115,11 +115,15 @@ type Model struct {
 }
 
 type createPrompt struct {
+	image  *clipboardResult
 	folder bool
 	input  textinput.Model
 }
 
 func (p *createPrompt) title() string {
+	if p.image != nil {
+		return "Save clipboard image"
+	}
 	if p.folder {
 		return "New folder"
 	}
@@ -311,9 +315,12 @@ type createResult struct {
 	err    error
 }
 
-func (m *Model) createItem(name string, folder bool) tea.Cmd {
+func (m *Model) createItem(name string, prompt *createPrompt) tea.Cmd {
 	m.busy = true
 	index := m.focus
+	if prompt.image != nil {
+		index = prompt.image.index
+	}
 	path, session := m.panes[index].path, m.session
 	return m.work(func() tea.Msg {
 		result := createResult{name: name}
@@ -330,7 +337,11 @@ func (m *Model) createItem(name string, folder bool) tea.Cmd {
 			return result
 		}
 		defer root.Close()
-		result.err = fsops.Create(root, relative, name, folder)
+		if prompt.image != nil {
+			result.err = fsops.CreateFile(root, relative, name, prompt.image.data)
+		} else {
+			result.err = fsops.Create(root, relative, name, prompt.folder)
+		}
 		if result.err == nil {
 			if index == 0 {
 				result.target = listExternal(session, path)

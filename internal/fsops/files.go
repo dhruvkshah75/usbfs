@@ -1,6 +1,7 @@
 package fsops
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"os/exec"
@@ -13,6 +14,14 @@ import (
 
 // Create adds one new item inside dir without modifying any existing item.
 func Create(root *os.Root, dir, name string, folder bool) error {
+	return create(root, dir, name, folder, nil)
+}
+
+func CreateFile(root *os.Root, dir, name string, data []byte) error {
+	return create(root, dir, name, false, data)
+}
+
+func create(root *os.Root, dir, name string, folder bool, data []byte) error {
 	if strings.TrimSpace(name) == "" || name == "." || name == ".." ||
 		strings.ContainsRune(name, filepath.Separator) || strings.ContainsFunc(name, unicode.IsControl) {
 		return errors.New("enter a single file or folder name")
@@ -25,7 +34,11 @@ func Create(root *os.Root, dir, name string, folder bool) error {
 	if err != nil {
 		return err
 	}
-	return confirmFile(root, path, 0, file.Close())
+	if data == nil {
+		return confirmFile(root, path, 0, file.Close())
+	}
+	count, err := writeCopy(file, bytes.NewReader(data), int64(len(data)), func(int64, int64) {})
+	return confirmFile(root, path, count, err)
 }
 
 type Entry struct {

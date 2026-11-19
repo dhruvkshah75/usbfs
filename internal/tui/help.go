@@ -19,6 +19,7 @@ var helpCommands = []struct{ keys, action string }{
 	{"", "Copy and create"},
 	{"Drag an item", "Drop on a folder or in the opposite pane's open directory."},
 	{"Alt+c", "Copy a file or folder to the opposite pane. Confirm folder copies with y."},
+	{"Ctrl+V", "Save a PNG or JPEG from the desktop clipboard in the focused folder."},
 	{"Ctrl+N / Ctrl+F", "Create a folder or empty file in the focused pane."},
 	{"Enter / Esc", "Submit or cancel a name. Use arrows and Backspace/Delete to edit."},
 	{"Delete", "Delete a regular file from Linux. Confirm with y, or cancel with n/Esc."},

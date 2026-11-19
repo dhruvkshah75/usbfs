@@ -345,11 +345,12 @@ func (m *Model) modal(screen string) string {
 	}
 
 	if m.create != nil {
-		destination := "external device"
-		if m.focus == 1 {
-			destination = "Linux host"
+		index, action := m.focus, "Create"
+		if m.create.image != nil {
+			index, action = m.create.image.index, "Save"
 		}
-		prompt, controls = m.create.title()+" · "+destination, "[Enter] Create   [Esc] Cancel"
+		destination := destinationLabel(index, clean(m.panes[index].path))
+		prompt, controls = m.create.title()+" · "+destination, "[Enter] "+action+"   [Esc] Cancel"
 		input = styledLine(contentWidth, m.create.input.View(), surfaceElevated) + "\n"
 	}
 	body := wrappedRows(foreground(cream, surfaceElevated).Bold(true), contentWidth, prompt) + "\n" + input +

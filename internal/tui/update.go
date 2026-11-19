@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -207,6 +208,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case copyResult:
 		m.copyFinished(msg)
+	case clipboardResult:
+		m.busy = false
+		if msg.err != nil {
+			m.message(msg.err.Error(), true)
+		} else if !m.confirm && m.ready {
+			input := newInput(m.nameWidth(), "Filename")
+			input.SetValue("clipboard-" + time.Now().Format("20060102-150405") + msg.ext)
+			input.CursorEnd()
+			m.create, m.help = &createPrompt{input: input, image: &msg}, false
+			return m, m.create.input.Focus()
+		}
 	case createResult:
 		m.busy = false
 		switch {
@@ -344,8 +356,20 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 		case "esc":
 			m.create = nil
 		case "enter":
+			name := prompt.input.Value()
+			if prompt.image != nil {
+				name = strings.TrimSpace(name)
+				if name == "" || name == "." || name == ".." {
+					m.message("Enter a filename to save the image.", true)
+					return nil
+				}
+				ext := strings.ToLower(filepath.Ext(name))
+				if ext != prompt.image.ext && !(prompt.image.ext == ".jpg" && ext == ".jpeg") {
+					name += prompt.image.ext
+				}
+			}
 			m.create = nil
-			return m.createItem(prompt.input.Value(), prompt.folder)
+			return m.createItem(name, prompt)
 		default:
 			var cmd tea.Cmd
 			prompt.input, cmd = prompt.input.Update(msg)
@@ -469,10 +493,13 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 		default:
 			m.deleteName = entries[p.cursor].Name
 		}
-	case "ctrl+n", "ctrl+f":
+	case "ctrl+n", "ctrl+f", "ctrl+v":
 		if m.focus == 0 && p.path == "." && m.platform == device.Apple {
 			m.message("Open a mounted folder on the external device first.", true)
 			return nil
+		}
+		if key == "ctrl+v" {
+			return m.pasteImage()
 		}
 		m.create = &createPrompt{folder: key == "ctrl+n", input: newInput(m.nameWidth(), "Name")}
 		return m.create.input.Focus()

@@ -34,6 +34,8 @@ sudo apt update
 sudo apt install fuse3 xdg-utils
 ```
 
+Clipboard image saving has an optional dependency. On Ubuntu, install `wl-clipboard` for a Wayland session or `xclip` for an X11 session. Use the desktop clipboard on the machine running `usbfs`.
+
 Install the dependencies for the device types you plan to use. You can install both sets on the same computer.
 
 ```bash
@@ -127,6 +129,7 @@ Keep the mount directory reserved for `usbfs`. It is used as a filesystem mount 
 | Enter a folder or open a file | `→` or `Enter` |
 | Go up a directory | `←`. The device pane stops at its mount root. |
 | Search the focused pane and its subfolders | Start typing. `Backspace` erases one character, and `Esc` or `Ctrl+U` clears the search. |
+| Save a clipboard image | `Ctrl+V`, edit the filename, and press `Enter` to save in the focused folder. |
 | Show selected item details | `Alt+I`. Scroll with `↑` / `↓` or the mouse wheel, and press `Esc` to close. |
 | Copy to the other pane | `Alt+C` or drag a file or folder. Confirm folder copies with `y` or cancel with `n` / `Esc`. |
 | Refresh | `Alt+R` refreshes both directory listings and reruns active searches. |
@@ -144,6 +147,7 @@ From the iPhone/iPad share picker, searching covers all mounted shares. Nested r
 - **Keyboard copy.** Open the destination folder in one pane, switch to the source pane, select a file or folder, and press `Alt+C`.
 - **Mouse copy.** Drag a file or folder into the opposite pane. Drop onto a folder row to copy inside it, or drop into blank space to copy into that pane's open folder. The destination highlights during the drag, and the status area reports the target, progress, and success or failure. Use this in either direction.
 - **Create items.** Open the folder where you want the new directory or empty file and press `Ctrl+N` or `Ctrl+F`. Enter a single name. For iPhone/iPad, open a mounted share such as Goodnotes or Brave first. Available operations depend on the device and the folder's permissions.
+- **Save a clipboard image.** Copy image data in a desktop app or take a screenshot to the clipboard. Open the destination in either pane and press `Ctrl+V`. Keep or edit the proposed filename, then press `Enter` to save or `Esc` to cancel. On iPhone/iPad, open a writable share first. Existing files are protected. The clipboard must offer PNG or JPEG image data up to 32 MiB.
 - **Inspect an item.** Press `Alt+I` to see its full name, path, type, size, and last modified time as reported by the filesystem. On iPhone/iPad the dialog also identifies the mounted share. Sizes use the largest applicable decimal unit from B, KB, MB, and GB, rounded down to a whole number. For example, 100 million bytes shows as 100 MB. Folder size totals the regular files inside it, including nested folders. The dialog marks the total as partial if some entries are unreadable or the scan takes too long. The same shortcut works on recursive search results.
 - **Open files.** Select a file and press `Enter` or `→` to launch the Linux default app with `xdg-open`. For a device file, the app receives the mounted file path. If you plan to edit the file, first copy it to Linux and edit that copy. File operations in the launched desktop app are governed by that app and the filesystem.
 - **Delete on Linux.** Select a regular file in the Linux host pane, press `Delete`, and read the confirmation before pressing `y`. The action is permanent. Folders, including empty ones, symbolic links, and external-device items are protected.

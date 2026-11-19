@@ -130,7 +130,7 @@ func (w *trackedWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func writeCopy(dest, source *os.File, size int64, progress func(int64, int64)) (int64, error) {
+func writeCopy(dest *os.File, source io.Reader, size int64, progress func(int64, int64)) (int64, error) {
 	w := &trackedWriter{Writer: dest, total: size, progress: progress}
 	progress(0, size)
 	count, err := io.CopyBuffer(w, struct{ io.Reader }{source}, make([]byte, 256*1024))
