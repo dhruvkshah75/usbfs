@@ -4,7 +4,25 @@
 
 [Install](#install) · [Connect a device](#connect-a-device) · [Controls](#controls) · [Copy and manage files](#copy-and-manage-files) · [Safe exit](#safe-exit) · [Troubleshooting](#troubleshooting) · [Development](#development)
 
+![usbfs showing an iPad's Brave file share on the left and Linux files on the right](docs/usbfs-screenshot.png)
+
 ## Install
+
+### Quick install on Ubuntu 24.04
+
+Run these commands as your regular user. The installer uses `sudo` for Ubuntu packages, builds `usbfs`, and installs it to `~/.local/bin/usbfs`.
+
+```bash
+sudo apt install git # Skip if Git is installed
+git clone https://github.com/dhruvkshah75/usbfs.git
+cd usbfs
+./install.sh
+~/.local/bin/usbfs
+```
+
+The installer installs FUSE tools and both Android and iPhone/iPad drivers. If Go is missing, it installs Ubuntu's `golang-1.25-go` package from Universe. If `apt` cannot find a package, enable Universe with `sudo add-apt-repository universe` and rerun the installer. See the [Ubuntu Go package](https://packages.ubuntu.com/noble-updates/golang-1.25-go).
+
+If the prerequisites are already installed, including on other Linux distributions, run `./install.sh --skip-system-deps`. To update, run `git pull --ff-only` in the checkout and rerun the installer. To uninstall, exit `usbfs` normally and remove `~/.local/bin/usbfs`.
 
 ### Requirements
 
@@ -13,7 +31,7 @@
 - An interactive terminal. Drag and drop requires terminal mouse reporting and enough room to display both panes. Keyboard copying works in the compact layout.
 - Go **1.25.0 or newer** to build from source, as specified in [go.mod](go.mod). Use the [official Go installation instructions](https://go.dev/doc/install) and verify with `go version`. Git is needed to clone the repository. The initial build needs access to Go module downloads unless the dependencies are already cached.
 
-### Install the system tools
+### Install the system tools manually
 
 ```bash
 sudo apt update
@@ -40,7 +58,7 @@ sudo apt install ifuse libimobiledevice-utils usbmuxd
 
 On Ubuntu, if `apt` cannot locate `jmtpfs`, `ifuse`, or `libimobiledevice-utils`, run `sudo add-apt-repository universe`, then `sudo apt update` and retry. [Ubuntu package index for jmtpfs](https://packages.ubuntu.com/jmtpfs) · [Ubuntu package index for ifuse](https://packages.ubuntu.com/noble/ifuse) · [Ubuntu package index for libimobiledevice-utils](https://packages.ubuntu.com/search?keywords=libimobiledevice-utils&suite=noble)
 
-### Build and launch
+### Build and launch manually
 
 Skip the clone step if you already have this checkout.
 
