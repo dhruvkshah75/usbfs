@@ -113,6 +113,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.searchInput.Width = m.nameWidth()
 		}
 	case tea.MouseMsg:
+		if m.details != nil {
+			switch msg.Button {
+			case tea.MouseButtonWheelUp:
+				m.detailsScroll(-3)
+			case tea.MouseButtonWheelDown:
+				m.detailsScroll(3)
+			}
+			return m, nil
+		}
 		if m.help {
 			switch msg.Button {
 			case tea.MouseButtonWheelUp:
@@ -170,6 +179,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case transferTick:
 		if msg.copy == m.transfer {
 			return m, watch(msg.copy)
+		}
+	case detailsResult:
+		m.busy = false
+		if msg.err != nil {
+			m.message("Cannot read item details: "+msg.err.Error(), true)
+		} else if !m.confirm {
+			m.details, m.detailsOffset, m.help = &msg, 0, false
 		}
 	case searchResult:
 		m.searchFinished(msg)
@@ -262,6 +278,21 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 		}
 		return tea.Quit
 	}
+	if m.details != nil {
+		switch key {
+		case "esc", "alt+i":
+			m.details = nil
+		case "up":
+			m.detailsScroll(-1)
+		case "down":
+			m.detailsScroll(1)
+		case "pgup":
+			m.detailsScroll(-m.detailsPageSize())
+		case "pgdown":
+			m.detailsScroll(m.detailsPageSize())
+		}
+		return nil
+	}
 	if m.searchInput != nil {
 		input := m.searchInput
 		switch key {
@@ -303,6 +334,9 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 			m.confirm = false
 		case "y":
 			if m.transfer == nil {
+				if m.cancelSearch != nil {
+					m.cancelSearch()
+				}
 				return tea.Quit
 			}
 		}
@@ -441,6 +475,10 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	switch key {
+	case "alt+i":
+		if len(entries) > 0 {
+			return m.inspectItem(m.focus, filepath.Join(p.path, entries[p.cursor].Name))
+		}
 	case "alt+s":
 		input := newInput(m.nameWidth(), "Filename")
 		if p.search != "" {

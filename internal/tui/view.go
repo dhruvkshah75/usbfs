@@ -69,7 +69,9 @@ func (m *Model) View() string {
 	}
 	if m.width < 16 || m.height < 6 {
 		screen := line(foreground(coral, surface), m.width, "F1 Help · Esc")
-		if m.help {
+		if m.details != nil {
+			screen = line(foreground(coral, surfaceElevated), m.width, "Details · Esc")
+		} else if m.help {
 			screen = line(foreground(coral, surfaceElevated), m.width, "F1/Esc Close")
 		} else if m.confirm || m.folder != nil || m.searchInput != nil || m.create != nil || m.deleteName != "" {
 			screen = m.compactModal()
@@ -99,7 +101,9 @@ func (m *Model) View() string {
 		main = m.pane(m.focus, m.width, height)
 	}
 	screen := lipgloss.JoinVertical(lipgloss.Left, header, main, footer)
-	if m.help {
+	if m.details != nil {
+		screen = m.centerDialog(screen, m.detailsDialog())
+	} else if m.help {
 		screen = m.centerDialog(screen, m.helpDialog())
 	} else if m.confirm || m.folder != nil || m.searchInput != nil || m.create != nil || m.deleteName != "" {
 		screen = m.modal(screen)

@@ -15,6 +15,7 @@ var helpCommands = []struct{ keys, action string }{
 	{"←", "Go up a directory."},
 	{"Type", "Filter filenames in the focused pane's current folder."},
 	{"Backspace / Ctrl+U", "Erase a character or clear the filter."},
+	{"Alt+i", "Show details for the selected item. Esc closes the dialog."},
 	{"Alt+s", "Search subfolders of the focused pane. Enter runs the search."},
 	{"Esc / ←", "Return from search results. Esc also cancels an active search."},
 	{"", "Copy and create"},

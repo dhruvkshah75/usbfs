@@ -112,6 +112,8 @@ type Model struct {
 	deleteName           string
 	help                 bool
 	helpOffset           int
+	details              *detailsResult
+	detailsOffset        int
 }
 
 type createPrompt struct {

@@ -62,6 +62,7 @@ Once mounted, render a responsive side-by-side dual-pane TUI:
   * If file on External Device or Linux Host: Launch the file directly on the Linux desktop using `xdg-open <filepath>` in a non-blocking subprocess so PDFs, images, and notes open immediately.
 * `Left`: Navigate to the parent directory (clamped at the external device root).
 * `Tab`: Switch active focus between the External Device pane and the Linux Local pane.
+* Use `Alt+I` to show the selected item’s name, location, path, type, file size, and modification time in a centered dialog.
 * Use `Alt+S` to search subfolders in either pane. Show relative paths in the results and allow cancellation with `Esc`.
 * Type to filter names in the focused pane's current folder. Each pane keeps its own filter. `Backspace` erases a character and `Ctrl+U` clears the filter.
 * `Alt+c`: Copy selected file to the directory currently open in the opposite pane:

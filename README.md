@@ -128,6 +128,7 @@ Keep the mount directory reserved for `usbfs`. It is used as a filesystem mount 
 | Go up a directory | `←`. The device pane stops at its mount root. |
 | Filter the focused pane | Type any letters or other printable characters. `Backspace` erases one character and `Ctrl+U` clears the filter. |
 | Search subfolders in either pane | `Alt+S`, enter a name, and press `Enter`. `Esc` cancels a running search or closes the results. |
+| Show selected item details | `Alt+I`. Scroll with `↑` / `↓` or the mouse wheel, and press `Esc` to close. |
 | Copy to the other pane | `Alt+C` or drag a file or folder. Confirm folder copies with `y` or cancel with `n` / `Esc`. |
 | Refresh | `Alt+R` refreshes both directory listings or reruns the focused recursive search. |
 | Create a directory or empty file | `Ctrl+N` directory, `Ctrl+F` empty file. Name it and press `Enter`, or press `Esc` to cancel. |
@@ -144,6 +145,7 @@ Recursive search starts from the focused folder and matches item names with the 
 - **Keyboard copy.** Open the destination folder in one pane, switch to the source pane, select a file or folder, and press `Alt+C`.
 - **Mouse copy.** Drag a file or folder into the opposite pane. Drop onto a folder row to copy inside it, or drop into blank space to copy into that pane's open folder. The destination highlights during the drag, and the status area reports the target, progress, and success or failure. Use this in either direction.
 - **Create items.** Open the folder where you want the new directory or empty file and press `Ctrl+N` or `Ctrl+F`. Enter a single name. For iPhone/iPad, open a mounted share such as Goodnotes or Brave first. Available operations depend on the device and the folder's permissions.
+- **Inspect an item.** Press `Alt+I` to see its full name, path, type, size for regular files, and last modified time as reported by the filesystem. On iPhone/iPad the dialog also identifies the mounted share. The same shortcut works on recursive search results.
 - **Open files.** Select a file and press `Enter` or `→` to launch the Linux default app with `xdg-open`. For a device file, the app receives the mounted file path. If you plan to edit the file, first copy it to Linux and edit that copy. File operations in the launched desktop app are governed by that app and the filesystem.
 - **Delete on Linux.** Select a regular file in the Linux host pane, press `Delete`, and read the confirmation before pressing `y`. The action is permanent. Folders, including empty ones, symbolic links, and external-device items are protected.
 
