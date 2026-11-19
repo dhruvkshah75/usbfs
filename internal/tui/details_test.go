@@ -84,3 +84,34 @@ func TestDetailsKeyboardWorksInExternalPane(t *testing.T) {
 		t.Fatalf("share details missing:\n%s", view)
 	}
 }
+
+func TestFolderDetailsCountsNestedContentsWithoutFollowingLinks(t *testing.T) {
+	base := t.TempDir()
+	path := filepath.Join(base, "StudyFiles")
+	if err := os.MkdirAll(filepath.Join(path, "nested"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	for name, data := range map[string]string{"one.txt": "123", "nested/two.txt": "45678"} {
+		if err := os.WriteFile(filepath.Join(path, name), []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join(path, "one.txt"), filepath.Join(path, "link")); err != nil {
+		t.Fatal(err)
+	}
+	result := readDetails(&device.Session{}, device.Android, 1, path)
+	if result.err != nil || result.folderSize != "8 bytes (contents)" {
+		t.Fatalf("folder size = %q, error = %v", result.folderSize, result.err)
+	}
+	root, err := os.OpenRoot(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if got := folderDetailsSize(root, "StudyFiles", result.info); got != "8 bytes (contents)" {
+		t.Fatalf("root-relative folder size = %q", got)
+	}
+	if !strings.Contains(strings.Join(result.lines(), "\n"), "Size: 8 bytes (contents)") {
+		t.Fatal("folder size missing from rendered details")
+	}
+}

@@ -1,10 +1,13 @@
 package tui
 
 import (
+	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -17,12 +20,22 @@ type detailsResult struct {
 	path, location string
 	info           os.FileInfo
 	err            error
+	folderSize     string
 }
 
 func readDetails(session *device.Session, platform device.Platform, index int, path string) detailsResult {
 	result := detailsResult{path: path, location: "Linux host"}
 	if index == 1 {
 		result.info, result.err = os.Lstat(path)
+		if result.err == nil && result.info.IsDir() {
+			root, err := os.OpenRoot(path)
+			if err != nil {
+				result.folderSize = "Unavailable"
+			} else {
+				defer root.Close()
+				result.folderSize = folderDetailsSize(root, ".", result.info)
+			}
+		}
 		return result
 	}
 	root, relative, err := session.OpenPath(path)
@@ -37,7 +50,48 @@ func readDetails(session *device.Session, platform device.Platform, index int, p
 		result.location += " · " + share
 	}
 	result.info, result.err = root.Lstat(relative)
+	if result.err == nil && result.info.IsDir() {
+		result.folderSize = folderDetailsSize(root, relative, result.info)
+	}
 	return result
+}
+
+func folderDetailsSize(root *os.Root, path string, top os.FileInfo) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	var bytes int64
+	var partial bool
+	deviceID := top.Sys().(*syscall.Stat_t).Dev
+	err := fs.WalkDir(root.FS(), path, func(name string, entry fs.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err != nil {
+			partial = true
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			partial = true
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if info.Sys().(*syscall.Stat_t).Dev != deviceID {
+			partial = true
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
+		} else if info.Mode().IsRegular() {
+			bytes += info.Size()
+		}
+		return nil
+	})
+	if partial || err != nil {
+		return fmt.Sprintf("%d bytes (partial)", bytes)
+	}
+	return fmt.Sprintf("%d bytes (contents)", bytes)
 }
 
 func (m *Model) inspectItem(index int, path string) tea.Cmd {
@@ -47,12 +101,15 @@ func (m *Model) inspectItem(index int, path string) tea.Cmd {
 }
 
 func (d detailsResult) lines() []string {
-	name, size, kind, modified := filepath.Base(d.path), "—", "Special entry", "Unavailable"
+	name, size, kind, modified := filepath.Base(d.path), "Unavailable", "Special entry", "Unavailable"
 	switch {
 	case d.info.Mode().IsRegular():
 		kind, size = "File", fmt.Sprintf("%d bytes", d.info.Size())
 	case d.info.IsDir():
 		kind = "Folder"
+		if d.folderSize != "" {
+			size = d.folderSize
+		}
 	case d.info.Mode()&os.ModeSymlink != 0:
 		kind = "Symbolic link"
 	}
