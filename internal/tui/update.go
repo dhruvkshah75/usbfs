@@ -10,7 +10,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/spinner"
-	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"usbfs/internal/device"
@@ -110,6 +109,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.create != nil {
 			m.create.input.Width = m.nameWidth()
 		}
+		if m.searchInput != nil {
+			m.searchInput.Width = m.nameWidth()
+		}
 	case tea.MouseMsg:
 		if m.help {
 			switch msg.Button {
@@ -169,6 +171,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.copy == m.transfer {
 			return m, watch(msg.copy)
 		}
+	case searchResult:
+		m.searchFinished(msg)
 	case folderPrepared:
 		m.busy = false
 		if msg.err != nil {
@@ -204,6 +208,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.err != nil:
 			m.message("Cannot delete on Linux: "+msg.err.Error(), true)
 		case m.applyList(msg.target):
+			p := &m.panes[1]
+			for i, entry := range p.results {
+				if entry.Name == msg.name {
+					p.results = append(p.results[:i], p.results[i+1:]...)
+					p.cursor = max(0, min(p.cursor, len(p.results)-1))
+					break
+				}
+			}
 			m.message("✓ Deleted "+msg.name+" from Linux", false)
 		default:
 			m.message("Deleted "+msg.name+" from Linux. Refresh failed: "+msg.target.err.Error(), true)
@@ -227,6 +239,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m, m.key(msg)
 	default:
+		if m.searchInput != nil {
+			var cmd tea.Cmd
+			*m.searchInput, cmd = m.searchInput.Update(msg)
+			return m, cmd
+		}
 		if m.create != nil {
 			var cmd tea.Cmd
 			m.create.input, cmd = m.create.input.Update(msg)
@@ -240,7 +257,33 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 	m.drag = nil
 	key := msg.String()
 	if key == "ctrl+c" {
+		if m.cancelSearch != nil {
+			m.cancelSearch()
+		}
 		return tea.Quit
+	}
+	if m.searchInput != nil {
+		input := m.searchInput
+		switch key {
+		case "esc":
+			m.searchInput = nil
+		case "enter":
+			if filterText(input.Value()) != "" {
+				m.searchInput = nil
+				return m.startSearch(m.focus, input.Value())
+			}
+		default:
+			var cmd tea.Cmd
+			*input, cmd = input.Update(msg)
+			return cmd
+		}
+		return nil
+	}
+	if m.cancelSearch != nil && key == "esc" {
+		m.cancelSearch()
+		m.cancelSearch = nil
+		m.message("Search cancelled.", false)
+		return nil
 	}
 	if m.folder != nil {
 		switch key {
@@ -318,6 +361,12 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 	if m.ready {
 		p := &m.panes[m.focus]
 		switch {
+		case p.search != "" && (key == "esc" || key == "left" || key == "ctrl+u"):
+			p.search, p.results, p.cursor = "", nil, 0
+			m.message("", false)
+			return nil
+		case p.search != "" && (key == "backspace" || (!msg.Alt && (msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace))):
+			return nil
 		case p.filtering && key == "ctrl+u":
 			p.setFilter(false, "")
 			return nil
@@ -392,7 +441,19 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	switch key {
+	case "alt+s":
+		input := newInput(m.nameWidth(), "Filename")
+		if p.search != "" {
+			input.SetValue(p.search)
+		} else {
+			input.SetValue(p.query)
+		}
+		m.searchInput = &input
+		return m.searchInput.Focus()
 	case "alt+r":
+		if p.search != "" {
+			return m.startSearch(m.focus, p.search)
+		}
 		return m.refresh()
 	case "delete":
 		switch {
@@ -410,17 +471,7 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 			m.message("Open a mounted folder on the external device first.", true)
 			return nil
 		}
-		input := textinput.New()
-		input.Placeholder = "Name"
-		input.Prompt = "> "
-		input.Width = m.nameWidth()
-		input.TextStyle = foreground(coral, surfaceElevated)
-		input.PromptStyle = input.TextStyle
-		input.PlaceholderStyle = foreground(muted, surfaceElevated)
-		// Bubbles reverses the cursor style when drawing the caret.
-		input.Cursor.Style = foreground(surfaceElevated, coral)
-		input.Cursor.TextStyle = input.TextStyle
-		m.create = &createPrompt{folder: key == "ctrl+n", input: input}
+		m.create = &createPrompt{folder: key == "ctrl+n", input: newInput(m.nameWidth(), "Name")}
 		return m.create.input.Focus()
 	case "left":
 		parent := filepath.Dir(p.path)

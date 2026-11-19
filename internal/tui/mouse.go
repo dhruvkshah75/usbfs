@@ -35,7 +35,7 @@ func (p *pane) entryWindow(height int) (row, start, end int) {
 		return 1, 0, 0
 	}
 	row = 3
-	if p.filtering && height >= 6 {
+	if p.hasQuery() && height >= 6 {
 		row++
 	}
 	capacity := height - row - 1
@@ -92,7 +92,7 @@ func destinationLabel(index int, path string) string {
 }
 
 func (m *Model) mouse(msg tea.MouseMsg) tea.Cmd {
-	if !m.ready || m.busy || m.confirm || m.folder != nil || m.create != nil || m.deleteName != "" {
+	if !m.ready || m.busy || m.confirm || m.folder != nil || m.searchInput != nil || m.create != nil || m.deleteName != "" {
 		m.drag = nil
 		return nil
 	}

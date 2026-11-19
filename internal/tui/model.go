@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,6 +24,8 @@ type pane struct {
 	filtering bool
 	query     string
 	matches   []fsops.Entry
+	search    string
+	results   []fsops.Entry
 }
 
 func (p *pane) replace(path string, entries []fsops.Entry) {
@@ -30,6 +33,7 @@ func (p *pane) replace(path string, entries []fsops.Entry) {
 	visible := p.visible()
 	if p.path != path {
 		p.filtering, p.query = false, ""
+		p.search, p.results = "", nil
 	} else if p.cursor < len(visible) {
 		previous = visible[p.cursor].Name
 	}
@@ -44,6 +48,9 @@ func (p *pane) replace(path string, entries []fsops.Entry) {
 }
 
 func (p *pane) visible() []fsops.Entry {
+	if p.search != "" {
+		return p.results
+	}
 	if p.filtering {
 		return p.matches
 	}
@@ -74,6 +81,15 @@ func filterText(value string) string {
 	}, value)
 }
 
+func (p *pane) hasQuery() bool { return p.filtering || p.search != "" }
+
+func (p *pane) queryLabel() string {
+	if p.search != "" {
+		return "Search: " + clean(p.search)
+	}
+	return "Filter: " + clean(p.query)
+}
+
 type Model struct {
 	session              *device.Session
 	panes                [2]pane
@@ -91,6 +107,8 @@ type Model struct {
 	folder               *folderCopy
 	drag                 *fileDrag
 	create               *createPrompt
+	searchInput          *textinput.Model
+	cancelSearch         context.CancelFunc
 	deleteName           string
 	help                 bool
 	helpOffset           int
@@ -334,7 +352,7 @@ func (m *Model) deleteItem(name string) tea.Cmd {
 	path, session := m.panes[1].path, m.session
 	return m.work(func() tea.Msg {
 		result := deleteResult{name: name}
-		result.err = session.RemoveHostFile(path, name)
+		result.err = session.RemoveHostFile(filepath.Join(path, filepath.Dir(name)), filepath.Base(name))
 		if result.err == nil {
 			result.target = list(nil, 1, path)
 		}

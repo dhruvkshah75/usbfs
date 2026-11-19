@@ -71,7 +71,7 @@ func (m *Model) View() string {
 		screen := line(foreground(coral, surface), m.width, "F1 Help · Esc")
 		if m.help {
 			screen = line(foreground(coral, surfaceElevated), m.width, "F1/Esc Close")
-		} else if m.confirm || m.folder != nil || m.create != nil || m.deleteName != "" {
+		} else if m.confirm || m.folder != nil || m.searchInput != nil || m.create != nil || m.deleteName != "" {
 			screen = m.compactModal()
 		}
 		return m.fillScreen(screen)
@@ -101,7 +101,7 @@ func (m *Model) View() string {
 	screen := lipgloss.JoinVertical(lipgloss.Left, header, main, footer)
 	if m.help {
 		screen = m.centerDialog(screen, m.helpDialog())
-	} else if m.confirm || m.folder != nil || m.create != nil || m.deleteName != "" {
+	} else if m.confirm || m.folder != nil || m.searchInput != nil || m.create != nil || m.deleteName != "" {
 		screen = m.modal(screen)
 	}
 	return m.fillScreen(screen)
@@ -161,7 +161,7 @@ func (m *Model) pane(index, width, height int) string {
 	if index == 1 {
 		title, path = "LINUX HOST", p.path
 	}
-	filter := "Filter: " + clean(p.query)
+	filter := p.queryLabel()
 	border, heading := outline, cream
 	if m.focus == index {
 		border, heading = coral, coral
@@ -179,11 +179,11 @@ func (m *Model) pane(index, width, height int) string {
 		}
 	}
 	empty := "  Empty folder"
-	if p.filtering {
+	if p.hasQuery() {
 		empty = "  No matches"
 	}
 	if height < 5 {
-		if p.filtering {
+		if p.hasQuery() {
 			title = filter
 		}
 		rows := []string{line(foreground(coral, surfaceSoft).Bold(true), width, " "+title)}
@@ -206,7 +206,7 @@ func (m *Model) pane(index, width, height int) string {
 		line(foreground(heading, surfaceSoft).Bold(true), content, title),
 		pathLine,
 	}
-	if p.filtering {
+	if p.hasQuery() {
 		filterLine := line(foreground(coral, surfaceSoft), content, filter)
 		if height >= 6 {
 			rows = append(rows, filterLine)
@@ -336,6 +336,10 @@ func (m *Model) modal(screen string) string {
 	if m.deleteName != "" {
 		input = wrappedRows(foreground(coral, surfaceElevated), contentWidth, clean(m.deleteName)) + "\n"
 	}
+	if m.searchInput != nil {
+		prompt, controls = "Search subfolders · "+destinationLabel(m.focus, clean(m.panes[m.focus].path)), "[Enter] Search   [Esc] Cancel"
+		input = styledLine(contentWidth, m.searchInput.View(), surfaceElevated) + "\n"
+	}
 	if m.create != nil {
 		destination := "external device"
 		if m.focus == 1 {
@@ -367,6 +371,9 @@ func (m *Model) centerDialog(screen, dialog string) string {
 }
 
 func (m *Model) compactModal() string {
+	if m.searchInput != nil {
+		return styledLine(m.width, m.searchInput.View(), surfaceElevated)
+	}
 	if m.create != nil {
 		return styledLine(m.width, m.create.input.View(), surfaceElevated)
 	}

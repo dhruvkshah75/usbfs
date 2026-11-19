@@ -15,13 +15,15 @@ var helpCommands = []struct{ keys, action string }{
 	{"←", "Go up a directory."},
 	{"Type", "Filter filenames in the focused pane's current folder."},
 	{"Backspace / Ctrl+U", "Erase a character or clear the filter."},
+	{"Alt+s", "Search subfolders of the focused pane. Enter runs the search."},
+	{"Esc / ←", "Return from search results. Esc also cancels an active search."},
 	{"", "Copy and create"},
 	{"Drag an item", "Drop on a folder or in the opposite pane's open directory."},
 	{"Alt+c", "Copy a file or folder to the opposite pane. Confirm folder copies with y."},
 	{"Ctrl+N / Ctrl+F", "Create a folder or empty file in the focused pane."},
 	{"Enter / Esc", "Submit or cancel a name. Use arrows and Backspace/Delete to edit."},
 	{"Delete", "Delete a regular file from Linux. Confirm with y, or cancel with n/Esc."},
-	{"Alt+r", "Refresh both panes."},
+	{"Alt+r", "Refresh both panes or rerun the focused recursive search."},
 	{"", "Connection and exit"},
 	{"a / i", "Choose Android or iPhone/iPad at startup."},
 	{"r / b", "Retry detection or go back to device type while unmounted."},
@@ -81,8 +83,8 @@ func (m *Model) helpDialog() string {
 	if m.ready {
 		p := &m.panes[m.focus]
 		context = destinationLabel(m.focus, p.path)
-		if p.filtering {
-			context += " · Filter: " + p.query
+		if p.hasQuery() {
+			context += " · " + p.queryLabel()
 		}
 	}
 	context = line(foreground(muted, surfaceSoft), width, " "+clean(context))

@@ -127,14 +127,17 @@ Keep the mount directory reserved for `usbfs`. It is used as a filesystem mount 
 | Enter a folder or open a file | `→` or `Enter` |
 | Go up a directory | `←`. The device pane stops at its mount root. |
 | Filter the focused pane | Type any letters or other printable characters. `Backspace` erases one character and `Ctrl+U` clears the filter. |
+| Search subfolders in either pane | `Alt+S`, enter a name, and press `Enter`. `Esc` cancels a running search or closes the results. |
 | Copy to the other pane | `Alt+C` or drag a file or folder. Confirm folder copies with `y` or cancel with `n` / `Esc`. |
-| Refresh both panes | `Alt+R` |
+| Refresh | `Alt+R` refreshes both directory listings or reruns the focused recursive search. |
 | Create a directory or empty file | `Ctrl+N` directory, `Ctrl+F` empty file. Name it and press `Enter`, or press `Esc` to cancel. |
 | Delete a regular Linux file | `Delete`, then `y` to permanently delete or `n` / `Esc` to cancel |
 | Open or close the centered Help window | `F1`. `Esc` also closes it. Scroll with `↑` / `↓`, the mouse wheel, `PgUp` / `PgDn`, or `Home` / `End`. |
 | Exit | `Esc` or `Alt+Q`. If a device is mounted, confirm with `y` or cancel with `n` / `Esc`. Plain `q` also works on the setup screen. |
 
 The coral highlight shows the active selection. `[DIR]` marks folders and `[LOCKED]` marks entries the pane cannot open. Filtering is a case-insensitive filename match in the current directory and ignores whitespace when matching. Each pane keeps its own query when you switch focus. Changing directories clears that pane's filter. If the terminal is narrow, the app stacks the panes or displays just the focused one.
+
+Recursive search starts from the focused folder and matches item names with the same rules as the live filter. From the iPhone/iPad share picker, it searches across the mounted shares. Results show relative paths so identical names can be distinguished. Use the usual controls to open or copy a result, or press `Esc` or `←` to return to the directory listing. Search skips symbolic links, reports unreadable locations, and shows the first 1,000 matches.
 
 ## Copy and manage files
 
