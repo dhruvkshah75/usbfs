@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"usbfs/internal/device"
@@ -46,7 +47,7 @@ func (m *Model) openFile(index int, path, name string) tea.Cmd {
 }
 
 func (m *Model) message(message string, warning bool) {
-	m.status, m.warning = message, warning
+	m.status, m.statusDetail, m.warning = message, "", warning
 }
 
 func (m *Model) applyList(result listResult) bool {
@@ -71,13 +72,11 @@ func (m *Model) copyFinished(result copyResult) {
 		m.panes[result.target.index].replace(result.target.path, result.target.entries)
 	}
 	if result.err == nil {
-		destination := "external device"
-		if result.download {
-			destination = "Linux"
-		}
-		m.message("Copied "+result.name+" to "+destination, false)
+		m.message("✓ Copied "+result.name, false)
+		m.statusDetail = "→ " + result.destination
 		if result.target.err != nil {
-			m.message("File copied. Cannot refresh destination: "+result.target.err.Error(), true)
+			m.message("✓ Copied "+result.name+". Refresh failed: "+result.target.err.Error(), true)
+			m.statusDetail = "→ " + result.destination
 		}
 		return
 	}
@@ -103,6 +102,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = max(1, msg.Width), max(1, msg.Height)
+		m.drag = nil
+		if m.create != nil {
+			m.create.input.Width = m.nameWidth()
+		}
+	case tea.MouseMsg:
+		if m.help {
+			switch msg.Button {
+			case tea.MouseButtonWheelUp:
+				m.helpScroll(-3)
+			case tea.MouseButtonWheelDown:
+				m.helpScroll(3)
+			}
+			return m, nil
+		}
+		return m, m.mouse(msg)
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -153,6 +167,35 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case copyResult:
 		m.copyFinished(msg)
+	case createResult:
+		m.busy = false
+		switch {
+		case errors.Is(msg.err, os.ErrExist):
+			m.message("Create blocked: an item with that name already exists.", true)
+		case errors.Is(msg.err, os.ErrPermission), errors.Is(msg.err, syscall.EROFS):
+			m.message("Create blocked: this folder does not allow writes.", true)
+		case msg.err != nil:
+			m.message("Cannot create item: "+msg.err.Error(), true)
+		case m.applyList(msg.target):
+			p := &m.panes[msg.target.index]
+			for i, entry := range p.visible() {
+				if entry.Name == msg.name {
+					p.cursor = i
+					break
+				}
+			}
+			m.message("Created "+msg.name, false)
+		}
+	case deleteResult:
+		m.busy = false
+		switch {
+		case msg.err != nil:
+			m.message("Cannot delete on Linux: "+msg.err.Error(), true)
+		case m.applyList(msg.target):
+			m.message("✓ Deleted "+msg.name+" from Linux", false)
+		default:
+			m.message("Deleted "+msg.name+" from Linux. Refresh failed: "+msg.target.err.Error(), true)
+		}
 	case openResult:
 		m.busy = false
 		if msg.err != nil {
@@ -171,11 +214,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tea.KeyMsg:
 		return m, m.key(msg)
+	default:
+		if m.create != nil {
+			var cmd tea.Cmd
+			m.create.input, cmd = m.create.input.Update(msg)
+			return m, cmd
+		}
 	}
 	return m, nil
 }
 
 func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
+	m.drag = nil
 	key := msg.String()
 	if key == "ctrl+c" {
 		return tea.Quit
@@ -191,8 +241,58 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 	}
-	if m.ready && m.focus == 1 {
-		p := &m.panes[1]
+	if m.deleteName != "" {
+		switch key {
+		case "y":
+			name := m.deleteName
+			m.deleteName = ""
+			return m.deleteItem(name)
+		case "n", "esc":
+			m.deleteName = ""
+		}
+		return nil
+	}
+	if m.create != nil {
+		prompt := m.create
+		switch key {
+		case "esc":
+			m.create = nil
+		case "enter":
+			m.create = nil
+			return m.createItem(prompt.input.Value(), prompt.folder)
+		default:
+			var cmd tea.Cmd
+			prompt.input, cmd = prompt.input.Update(msg)
+			return cmd
+		}
+		return nil
+	}
+	if m.help {
+		switch key {
+		case "f1", "esc":
+			m.help = false
+		case "up":
+			m.helpScroll(-1)
+		case "down":
+			m.helpScroll(1)
+		case "pgup":
+			m.helpScroll(-m.helpPageSize())
+		case "pgdown":
+			m.helpScroll(m.helpPageSize())
+		case "home":
+			m.helpOffset = 0
+		case "end":
+			m.helpOffset = len(m.helpRows())
+			m.helpScroll(0)
+		}
+		return nil
+	}
+	if key == "f1" {
+		m.help, m.helpOffset = true, 0
+		return nil
+	}
+	if m.ready {
+		p := &m.panes[m.focus]
 		switch {
 		case p.filtering && key == "ctrl+u":
 			p.setFilter(false, "")
@@ -201,32 +301,23 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 			_, size := utf8.DecodeLastRuneInString(p.query)
 			p.setFilter(len(p.query) > size, p.query[:len(p.query)-size])
 			return nil
-		case !p.filtering && key == "/":
-			p.setFilter(true, "")
-			return nil
-		case p.filtering && key == "alt+c":
-			key = "c"
-		case p.filtering && key == "alt+r":
-			key = "r"
 		case !msg.Alt && (msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace):
-			if p.filtering || msg.Paste || len(msg.Runes) != 1 || !strings.ContainsRune("chjklqr", msg.Runes[0]) {
-				input := strings.Map(func(r rune) rune {
-					if unicode.IsPrint(r) {
-						return r
-					}
-					return -1
-				}, string(msg.Runes))
-				if msg.Type == tea.KeySpace {
-					input = " "
+			input := strings.Map(func(r rune) rune {
+				if unicode.IsPrint(r) {
+					return r
 				}
-				if input != "" {
-					p.setFilter(true, p.query+input)
-				}
-				return nil
+				return -1
+			}, string(msg.Runes))
+			if msg.Type == tea.KeySpace {
+				input = " "
 			}
+			if input != "" {
+				p.setFilter(true, p.query+input)
+			}
+			return nil
 		}
 	}
-	if key == "q" || key == "esc" {
+	if key == "esc" || key == "alt+q" || (!m.ready && key == "q") {
 		if !m.ready && m.device.Kind == "" && !m.session.HasMount() {
 			return tea.Quit
 		}
@@ -266,10 +357,10 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 	case "tab":
 		m.focus = 1 - m.focus
 		return nil
-	case "up", "k":
+	case "up":
 		p.cursor = max(0, p.cursor-1)
 		return nil
-	case "down", "j":
+	case "down":
 		p.cursor = max(0, min(len(entries)-1, p.cursor+1))
 		return nil
 	}
@@ -277,14 +368,42 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 	switch key {
-	case "r":
+	case "alt+r":
 		return m.refresh()
-	case "backspace", "left", "h":
+	case "delete":
+		switch {
+		case m.focus == 0:
+			m.message("Delete is available in the Linux host pane only.", true)
+		case len(entries) == 0:
+			return nil
+		case entries[p.cursor].Folder || entries[p.cursor].Locked || entries[p.cursor].Symlink:
+			m.message("Delete is available for regular files only.", true)
+		default:
+			m.deleteName = entries[p.cursor].Name
+		}
+	case "ctrl+n", "ctrl+f":
+		if m.focus == 0 && p.path == "." && m.platform == device.Apple {
+			m.message("Open a mounted folder on the external device first.", true)
+			return nil
+		}
+		input := textinput.New()
+		input.Placeholder = "Name"
+		input.Prompt = "> "
+		input.Width = m.nameWidth()
+		input.TextStyle = foreground(coral, surfaceElevated)
+		input.PromptStyle = input.TextStyle
+		input.PlaceholderStyle = foreground(muted, surfaceElevated)
+		// Bubbles reverses the cursor style when drawing the caret.
+		input.Cursor.Style = foreground(surfaceElevated, coral)
+		input.Cursor.TextStyle = input.TextStyle
+		m.create = &createPrompt{folder: key == "ctrl+n", input: input}
+		return m.create.input.Focus()
+	case "left":
 		parent := filepath.Dir(p.path)
 		if parent != p.path {
 			return m.navigate(m.focus, parent)
 		}
-	case "enter", "right", "l", "c":
+	case "enter", "right", "alt+c":
 		if len(entries) == 0 {
 			return nil
 		}
@@ -293,10 +412,10 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 		switch {
 		case entry.Locked:
 			m.message("Cannot access this item. Check its permissions.", true)
-		case key == "c" && entry.Folder:
+		case key == "alt+c" && entry.Folder:
 			m.message("Select a file to copy.", true)
-		case key == "c":
-			return m.startCopy(entry)
+		case key == "alt+c":
+			return m.startCopy(m.focus, entry, m.panes[1-m.focus].path)
 		case entry.Folder:
 			return m.navigate(m.focus, path)
 		default:

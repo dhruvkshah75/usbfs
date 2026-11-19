@@ -53,7 +53,7 @@ func run() (err error) {
 		return err
 	}
 
-	program := tea.NewProgram(tui.New(session, cwd), tea.WithAltScreen(), tea.WithoutSignalHandler())
+	program := tea.NewProgram(tui.New(session, cwd), tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithoutSignalHandler())
 	go func() {
 		<-ctx.Done()
 		program.Quit()

@@ -41,6 +41,11 @@ func line(style lipgloss.Style, width int, text string) string {
 	return style.Width(width).Render(ansi.Truncate(text, width, "…"))
 }
 
+func styledLine(width int, text, background string) string {
+	text = ansi.Truncate(text, width, "")
+	return text + line(foreground(cream, background), width-lipgloss.Width(text), "")
+}
+
 func fill(width int) string { return line(foreground(cream, surface), width, "") }
 
 func card(border, background string) lipgloss.Style {
@@ -52,36 +57,40 @@ func card(border, background string) lipgloss.Style {
 
 func (m *Model) View() string {
 	if m.width < 16 || m.height < 6 {
-		if m.confirm {
+		if m.help {
+			return line(foreground(coral, surfaceElevated), m.width, "F1/Esc Close")
+		}
+		if m.confirm || m.create != nil || m.deleteName != "" {
 			return m.compactModal()
 		}
-		return line(foreground(coral, surface), m.width, "usbfs · q Quit")
+		return line(foreground(coral, surface), m.width, "F1 Help · Esc")
 	}
 	header := line(foreground(coral, surfaceElevated).Bold(true), m.width, " usbfs")
 	if m.device.Kind != "" {
-		header = line(foreground(cream, surfaceElevated), m.width, " "+
-			foreground(coral, surfaceElevated).Bold(true).Render("usbfs")+"   "+
-			foreground(teal, surfaceElevated).Bold(true).Render("● MOUNTED")+"   "+
-			clean(m.device.Kind+" · "+m.device.Name))
+		header = styledLine(m.width, foreground(coral, surfaceElevated).Bold(true).Render(" usbfs   ")+
+			foreground(teal, surfaceElevated).Bold(true).Render("● MOUNTED   ")+
+			foreground(cream, surfaceElevated).Render(clean(m.device.Kind+" · "+m.device.Name))+
+			foreground(muted, surfaceElevated).Render("   DEVICE DELETE PROTECTED"), surfaceElevated)
 	}
 	footer := m.footer()
-	height := max(1, m.height-lipgloss.Height(header)-lipgloss.Height(footer))
+	height := m.paneHeight()
+	boxes := m.paneBoxes(height)
 	var main string
 	switch {
 	case !m.ready:
 		main = m.waiting(height)
 	case m.width >= 66:
-		left := (m.width - 2) / 2
 		gutter := strings.TrimSuffix(strings.Repeat(fill(2)+"\n", height), "\n")
-		main = lipgloss.JoinHorizontal(lipgloss.Top, m.pane(0, left, height), gutter, m.pane(1, m.width-left-2, height))
-	case height >= 13:
-		top := (height - 1) / 2
-		main = lipgloss.JoinVertical(lipgloss.Left, m.pane(0, m.width, top), fill(m.width), m.pane(1, m.width, height-top-1))
+		main = lipgloss.JoinHorizontal(lipgloss.Top, m.pane(0, boxes[0].width, height), gutter, m.pane(1, boxes[1].width, height))
+	case boxes[0].height > 0 && boxes[1].height > 0:
+		main = lipgloss.JoinVertical(lipgloss.Left, m.pane(0, m.width, boxes[0].height), fill(m.width), m.pane(1, m.width, boxes[1].height))
 	default:
 		main = m.pane(m.focus, m.width, height)
 	}
 	screen := lipgloss.JoinVertical(lipgloss.Left, header, main, footer)
-	if m.confirm {
+	if m.help {
+		screen = m.centerDialog(screen, m.helpDialog())
+	} else if m.confirm || m.create != nil || m.deleteName != "" {
 		screen = m.modal(screen)
 	}
 	return lipgloss.NewStyle().MaxHeight(m.height).Render(screen)
@@ -105,7 +114,7 @@ func (m *Model) waiting(height int) string {
 	}
 	heading := foreground(cream, surfaceElevated).Bold(true).Render(title)
 	if m.platform != "" && (m.mtpIssue == nil || m.busy) {
-		heading = m.spinner.View() + " " + heading
+		heading = m.spinner.View() + foreground(cream, surfaceElevated).Bold(true).Render(" "+title)
 	}
 	body := heading +
 		"\n\n" + foreground(muted, surfaceElevated).Render(ansi.Wrap(hint, contentWidth, ""))
@@ -128,6 +137,22 @@ func (m *Model) pane(index, width, height int) string {
 		title, path = "LINUX HOST", p.path
 	}
 	filter := "Filter: " + clean(p.query)
+	border, heading := outline, cream
+	if m.focus == index {
+		border, heading = coral, coral
+	}
+	dropRow := -1
+	if m.drag != nil && m.drag.moved && m.drag.from != index {
+		if hit, row := m.mouseHit(m.drag.x, m.drag.y); hit == index {
+			if _, ok := m.dropTarget(index, row); ok {
+				border, heading = coral, coral
+				title = "↓ DROP TO COPY"
+				if row >= 0 && entries[row].Folder {
+					dropRow = row
+				}
+			}
+		}
+	}
 	empty := "  Empty folder"
 	if p.filtering {
 		empty = "  No matches"
@@ -139,10 +164,11 @@ func (m *Model) pane(index, width, height int) string {
 		rows := []string{line(foreground(coral, surfaceSoft).Bold(true), width, " "+title)}
 		if height > 1 {
 			label := empty
-			if len(entries) != 0 {
-				label = " › " + clean(entries[p.cursor].Name)
+			_, start, end := p.entryWindow(height)
+			if start < end {
+				label = " › " + clean(entries[start].Name)
 			}
-			rows = append(rows, line(foreground(cream, surfaceElevated), width, label))
+			rows = append(rows, line(foreground(heading, surfaceElevated), width, label))
 		}
 		for len(rows) < height {
 			rows = append(rows, fill(width))
@@ -150,10 +176,6 @@ func (m *Model) pane(index, width, height int) string {
 		return strings.Join(rows, "\n")
 	}
 	content := width - 4
-	border, heading := outline, cream
-	if m.focus == index {
-		border, heading = coral, coral
-	}
 	pathLine := line(foreground(muted, surfaceSoft), content, clean(path))
 	rows := []string{
 		line(foreground(heading, surfaceSoft).Bold(true), content, title),
@@ -167,12 +189,11 @@ func (m *Model) pane(index, width, height int) string {
 			rows[1] = filterLine
 		}
 	}
-	capacity := height - 2 - len(rows)
 	if len(entries) == 0 {
 		rows = append(rows, line(foreground(muted, surfaceSoft), content, empty))
 	}
-	start := max(0, p.cursor-capacity+1)
-	for i := start; i < min(len(entries), start+capacity); i++ {
+	_, start, end := p.entryWindow(height)
+	for i := start; i < end; i++ {
 		entry := entries[i]
 		prefix, label, ink, background := "  ", "         ", cream, surfaceSoft
 		switch {
@@ -184,8 +205,13 @@ func (m *Model) pane(index, width, height int) string {
 		if p.cursor == i {
 			prefix, background = "› ", surfaceElevated
 			if m.focus == index {
-				prefix = foreground(coral, background).Render(prefix)
+				ink = coral
 			}
+		}
+		if i == dropRow {
+			prefix, ink, background = "↓ ", coral, surfaceElevated
+		} else if m.drag != nil && m.drag.moved && m.drag.from == index && entry.Name == m.drag.entry.Name {
+			prefix, ink, background = "↗ ", coral, surfaceElevated
 		}
 		rows = append(rows, line(foreground(ink, background), content, prefix+label+clean(entry.Name)))
 	}
@@ -195,61 +221,68 @@ func (m *Model) pane(index, width, height int) string {
 	return card(border, surfaceSoft).Padding(0, 1).Render(strings.Join(rows, "\n"))
 }
 
-func (m *Model) footer() string {
-	status, ink := clean(m.status), muted
-	if m.warning {
-		ink = amber
+func (m *Model) statusHeight() int {
+	if m.height < 9 {
+		return 1
 	}
-	if m.transfer != nil {
-		status, ink = "Copying "+clean(m.transfer.name)+"…", cream
-		if total := m.transfer.total.Load(); total >= 0 {
-			count := m.transfer.count.Load()
-			bar := m.progress
-			bar.Width = min(24, max(4, m.width/4))
-			percent := 1.0
+	return 2
+}
+
+func (m *Model) paneHeight() int {
+	return max(1, m.height-2-m.statusHeight())
+}
+
+func (m *Model) footer() string {
+	status, detail, ink := clean(m.status), clean(m.statusDetail), muted
+	switch {
+	case m.transfer != nil:
+		copy := m.transfer
+		status, ink = ansi.Strip(m.spinner.View())+" Copying "+clean(copy.name), coral
+		detail = "→ " + clean(copy.destination)
+		if total := copy.total.Load(); total >= 0 {
+			percent := 100
 			if total > 0 {
-				percent = min(1, float64(count)/float64(total))
+				percent = min(100, int(float64(copy.count.Load())/float64(total)*100))
 			}
-			status = fmt.Sprintf("%s %3.0f%%  %s", bar.ViewAs(percent), percent*100, status)
+			filled := percent / 10
+			status = fmt.Sprintf(" %s%s %3d%%  %s", strings.Repeat("━", filled), strings.Repeat("─", 10-filled), percent, status)
+		}
+	case m.drag != nil && m.drag.moved:
+		status, detail, ink = "↗ Dragging "+clean(m.drag.entry.Name), "Move to the opposite pane to copy", coral
+		if index, row := m.mouseHit(m.drag.x, m.drag.y); index >= 0 && index != m.drag.from {
+			if path, ok := m.dropTarget(index, row); ok {
+				detail = "↓ Release to copy → " + clean(destinationLabel(index, path))
+			} else {
+				detail = "Choose an accessible destination folder"
+			}
+		}
+	case m.warning:
+		ink = amber
+	case strings.HasPrefix(status, "✓"):
+		ink = coral
+	}
+	keys := "[F1] Help   [Esc] Exit"
+	switch {
+	case m.ready:
+		keys += "   [Tab] Switch   [Alt+c] Copy"
+	case m.platform != "" && m.width >= 36:
+		keys += "   [r] Retry"
+	}
+	if m.ready && m.width >= 66 {
+		keys += "   Type to filter"
+	}
+	if detail == "" && m.statusHeight() > 1 {
+		pieces := strings.SplitN(ansi.Wrap(status, m.width-1, ""), "\n", 2)
+		status = pieces[0]
+		if len(pieces) == 2 {
+			detail = strings.ReplaceAll(pieces[1], "\n", " ")
 		}
 	}
-	keys := "[r] Retry   [q] Quit"
-	if m.width < 21 {
-		keys = "r Retry  q Quit"
+	rows := []string{line(foreground(ink, surface), m.width, " "+status)}
+	if m.statusHeight() > 1 {
+		rows = append(rows, line(foreground(ink, surface), m.width, " "+detail))
 	}
-	switch {
-	case !m.ready && m.platform == "":
-		keys = "[q] Quit"
-	case !m.ready && !m.session.HasMount() && m.width >= 38:
-		keys = "[r] Retry   [b] Device type   [q] Quit"
-	case m.ready && m.focus == 1 && m.panes[1].filtering:
-		keys = "[Ctrl+U] Clear   [↑↓] Select   [↵] Open   [Alt+c] Copy   [Alt+r] Refresh   [Tab] Switch   [Esc] Exit"
-	case m.ready && m.focus == 1:
-		keys = "Type or [/] to filter   [Tab] Switch   [↑↓] Select   [↵] Open   [←] Parent   [c] Copy   [r] Refresh   [q] Exit"
-	case m.ready:
-		keys = "[Tab] Switch   [↑↓] Select   [↵] Open   [←] Parent   [c] Copy   [r] Refresh   [q] Exit"
-	}
-	keyRows := []string{keys}
-	if m.ready && m.height >= 12 {
-		keyRows = strings.Split(ansi.Wrap(keys, m.width-1, ""), "\n")
-		keyRows = keyRows[:min(len(keyRows), m.height/4)]
-	}
-	var controls []string
-	if m.device.Kind != "" {
-		controls = append(controls, line(foreground(teal, surface).Bold(true), m.width, " DEVICE DELETE PROTECTED"))
-	}
-	for _, row := range keyRows {
-		controls = append(controls, line(foreground(muted, surfaceElevated), m.width, " "+row))
-	}
-	statusRows := strings.Split(ansi.Wrap(status, m.width-1, ""), "\n")
-	if m.height < 12 {
-		statusRows = statusRows[:1]
-	}
-	var rendered []string
-	for _, row := range statusRows[:min(2, len(statusRows))] {
-		rendered = append(rendered, line(foreground(ink, surface), m.width, " "+row))
-	}
-	return strings.Join(append(rendered, controls...), "\n")
+	return strings.Join(append(rows, line(foreground(muted, surfaceElevated), m.width, " "+keys)), "\n")
 }
 
 func (m *Model) modal(screen string) string {
@@ -258,15 +291,35 @@ func (m *Model) modal(screen string) string {
 	if m.transfer != nil {
 		prompt, controls = "Transfer in progress! Wait for the copy to finish before unmounting.", "[n] Return to transfer"
 	}
+	if m.deleteName != "" {
+		prompt, controls = "Permanently delete this file from Linux?", "[y] Yes, delete   [n/Esc] No"
+	}
 	contentWidth := width - 4
-	body := foreground(cream, surfaceElevated).Bold(true).Render(ansi.Wrap(prompt, contentWidth, "")) + "\n" +
+	input := ""
+	if m.deleteName != "" {
+		input = foreground(coral, surfaceElevated).Render(ansi.Wrap(clean(m.deleteName), contentWidth, "")) + "\n"
+	}
+	if m.create != nil {
+		destination := "external device"
+		if m.focus == 1 {
+			destination = "Linux host"
+		}
+		prompt, controls = m.create.title()+" · "+destination, "[Enter] Create   [Esc] Cancel"
+		input = styledLine(contentWidth, m.create.input.View(), surfaceElevated) + "\n"
+	}
+	body := foreground(cream, surfaceElevated).Bold(true).Render(ansi.Wrap(prompt, contentWidth, "")) + "\n" + input +
 		foreground(coral, surfaceElevated).Render(ansi.Wrap(controls, contentWidth, ""))
 	dialog := card(coral, surfaceElevated).Width(width-2).Padding(0, 1).Render(body)
-	rows, overlay := strings.Split(screen, "\n"), strings.Split(dialog, "\n")
-	if len(overlay) > min(len(rows), m.height) {
+	if lipgloss.Height(dialog) > m.height {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.compactModal(),
 			lipgloss.WithWhitespaceBackground(lipgloss.Color(surface)))
 	}
+	return m.centerDialog(screen, dialog)
+}
+
+func (m *Model) centerDialog(screen, dialog string) string {
+	rows, overlay := strings.Split(screen, "\n"), strings.Split(dialog, "\n")
+	width := lipgloss.Width(dialog)
 	x, y := (m.width-width)/2, (len(rows)-len(overlay))/2
 	for i, row := range overlay {
 		behind := rows[y+i]
@@ -277,9 +330,23 @@ func (m *Model) modal(screen string) string {
 }
 
 func (m *Model) compactModal() string {
+	if m.create != nil {
+		return styledLine(m.width, m.create.input.View(), surfaceElevated)
+	}
 	label := "y Unmount / n"
+	if m.deleteName != "" {
+		label = "y Delete / n"
+		if m.height >= 2 {
+			return line(foreground(coral, surfaceElevated).Bold(true), m.width, label) + "\n" +
+				line(foreground(coral, surfaceElevated), m.width, clean(m.deleteName))
+		}
+	}
 	if m.transfer != nil {
 		label = "n Back · Copy"
 	}
 	return line(foreground(coral, surfaceElevated).Bold(true), m.width, label)
+}
+
+func (m *Model) nameWidth() int {
+	return max(1, min(56, m.width-2)-6)
 }

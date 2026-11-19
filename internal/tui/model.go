@@ -8,8 +8,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"usbfs/internal/device"
@@ -75,25 +75,41 @@ func filterText(value string) string {
 }
 
 type Model struct {
-	session       *device.Session
-	panes         [2]pane
-	focus         int
-	platform      device.Platform
-	device        device.Device
-	ready, busy   bool
-	mtpIssue      error
-	confirm       bool
-	status        string
-	warning       bool
-	width, height int
-	spinner       spinner.Model
-	progress      progress.Model
-	transfer      *transfer
+	session              *device.Session
+	panes                [2]pane
+	focus                int
+	platform             device.Platform
+	device               device.Device
+	ready, busy          bool
+	mtpIssue             error
+	confirm              bool
+	status, statusDetail string
+	warning              bool
+	width, height        int
+	spinner              spinner.Model
+	transfer             *transfer
+	drag                 *fileDrag
+	create               *createPrompt
+	deleteName           string
+	help                 bool
+	helpOffset           int
+}
+
+type createPrompt struct {
+	folder bool
+	input  textinput.Model
+}
+
+func (p *createPrompt) title() string {
+	if p.folder {
+		return "New folder"
+	}
+	return "New empty file"
 }
 
 type transfer struct {
-	name         string
-	count, total atomic.Int64
+	name, destination string
+	count, total      atomic.Int64
 }
 
 type pollMsg struct{}
@@ -105,7 +121,6 @@ func New(session *device.Session, cwd string) *Model {
 	return &Model{
 		session: session, panes: [2]pane{{path: "."}, {path: cwd}},
 		width: 80, height: 24, spinner: spin,
-		progress: progress.New(progress.WithSolidFill(coral), progress.WithoutPercentage()),
 	}
 }
 
@@ -214,21 +229,22 @@ func (m *Model) refresh() tea.Cmd {
 }
 
 type copyResult struct {
-	download bool
-	name     string
-	target   listResult
-	err      error
+	download    bool
+	name        string
+	destination string
+	target      listResult
+	err         error
 }
 
-func (m *Model) startCopy(entry fsops.Entry) tea.Cmd {
-	copy := &transfer{name: entry.Name}
+func (m *Model) startCopy(from int, entry fsops.Entry, target string) tea.Cmd {
+	copy := &transfer{name: entry.Name, destination: destinationLabel(1-from, target)}
 	copy.total.Store(-1)
 	m.busy, m.transfer = true, copy
-	from, to := m.focus, 1-m.focus
-	source, target := filepath.Join(m.panes[from].path, entry.Name), m.panes[to].path
+	to := 1 - from
+	source, viewPath := filepath.Join(m.panes[from].path, entry.Name), m.panes[to].path
 	session := m.session
 	run := m.work(func() tea.Msg {
-		result := copyResult{download: from == 0, name: copy.name}
+		result := copyResult{download: from == 0, name: copy.name, destination: copy.destination}
 		devicePath := target
 		if result.download {
 			devicePath = source
@@ -250,12 +266,68 @@ func (m *Model) startCopy(entry fsops.Entry) tea.Cmd {
 				return result
 			}
 			result.err = fsops.Download(root, relative, target, report, ids...)
-			result.target = list(nil, to, target)
+			result.target = list(nil, to, viewPath)
 		} else {
 			result.err = fsops.Upload(root, source, relative, report)
-			result.target = listExternal(session, target)
+			result.target = listExternal(session, viewPath)
 		}
 		return result
 	})
 	return tea.Batch(run, watch(copy))
+}
+
+type createResult struct {
+	name   string
+	target listResult
+	err    error
+}
+
+func (m *Model) createItem(name string, folder bool) tea.Cmd {
+	m.busy = true
+	index := m.focus
+	path, session := m.panes[index].path, m.session
+	return m.work(func() tea.Msg {
+		result := createResult{name: name}
+		var root *os.Root
+		var err error
+		relative := "."
+		if index == 0 {
+			root, relative, err = session.OpenPath(path)
+		} else {
+			root, err = session.OpenHostDirectory(path)
+		}
+		if err != nil {
+			result.err = err
+			return result
+		}
+		defer root.Close()
+		result.err = fsops.Create(root, relative, name, folder)
+		if result.err == nil {
+			if index == 0 {
+				result.target = listExternal(session, path)
+			} else {
+				result.target = list(nil, index, path)
+			}
+		}
+		return result
+	})
+}
+
+type deleteResult struct {
+	name   string
+	target listResult
+	err    error
+}
+
+func (m *Model) deleteItem(name string) tea.Cmd {
+	m.busy = true
+	path, session := m.panes[1].path, m.session
+	return m.work(func() tea.Msg {
+		result := deleteResult{name: name}
+		result.err = session.RemoveHostFile(path, name)
+		if result.err == nil {
+			result.target = list(nil, 1, path)
+		}
+		return result
+	})
 }

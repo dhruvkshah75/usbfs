@@ -56,17 +56,22 @@ Once mounted, render a responsive side-by-side dual-pane TUI:
 * **Bottom Status / Keybinding Bar:** Displays live feedback (copy progress, permission warnings, open status) and keybinding hints.
 
 #### Required Keybindings:
-* `Up` / `Down` or `j` / `k`: Move cursor up/down in the active pane.
-* `Enter` or `Right` / `l`:
+* `Up` / `Down`: Move the cursor in the active pane.
+* `Enter` or `Right`:
   * If directory: Enter directory (if permission denied, show a non-fatal status warning: *"Permission denied: external device restricts access to this folder"* without crashing).
   * If file on External Device or Linux Host: Launch the file directly on the Linux desktop using `xdg-open <filepath>` in a non-blocking subprocess so PDFs, images, and notes open immediately.
-* `Backspace` or `Left` / `h`: Navigate to parent directory (clamped at mount root for the external device pane).
+* `Left`: Navigate to the parent directory (clamped at the external device root).
 * `Tab`: Switch active focus between the External Device pane and the Linux Local pane.
-* `c`: Copy selected file to the directory currently open in the opposite pane:
+* Type to filter names in the focused pane's current folder. Each pane keeps its own filter. `Backspace` erases a character and `Ctrl+U` clears the filter.
+* `Alt+c`: Copy selected file to the directory currently open in the opposite pane:
   * **External Device $\rightarrow$ Linux Host (Download):** Copies file from external device to local Linux directory using buffered `io.Copy` inside a background goroutine so the UI stays responsive.
   * **Linux Host $\rightarrow$ External Device (Upload):** Copies file from Linux directory into the currently open folder on the external device. If the destination file already exists on the external device, **block overwriting** and notify the user (*"Overwrite blocked: file already exists on external device"*). If the target folder on the external device is read-only/sandboxed, catch the `EACCES`/`EPERM` error gracefully and display *"Upload blocked: external device folder is read-only."*
-* `r`: Refresh directory listings in both panes.
-* `q` or `Esc`: Trigger the **Safe Unmount & Exit Confirmation Modal**.
+* Drag a file between panes to copy it. Drop it onto a folder row to copy into that folder, or elsewhere in the opposite pane to copy into its open folder. The status area shows the drop target, copy progress, and the result. The terminal must support mouse reporting and have room to show both panes.
+* `Ctrl+N` creates a folder and `Ctrl+F` creates an empty file. Enter a single name in the prompt to create it in the focused pane's open folder. On iOS, open a mounted share first. Existing names and write restrictions block creation.
+* `Delete` removes one selected regular file from the Linux host after confirmation with `y`. Press `n` or `Esc` to cancel. Directories, symbolic links, and external-device items are protected.
+* `F1` opens a centered, scrollable command reference over the panes. Press `F1` or `Esc` to close it.
+* `Alt+r`: Refresh directory listings in both panes.
+* `Alt+q` or `Esc`: Trigger the **Safe Unmount & Exit Confirmation Modal**. Plain `q` also works during device setup.
 
 ---
 
@@ -84,7 +89,7 @@ Once mounted, render a responsive side-by-side dual-pane TUI:
 ### 3.4 Guaranteed Safe Unmount & Exit Lifecycle (Critical Requirement)
 To prevent filesystem corruption on either device:
 1. **Exit Confirmation Modal:**
-   * Pressing `q` opens a centered modal dialog:
+   * Pressing `Alt+q` or `Esc` opens a centered modal dialog:
      > `"Unmount external device and exit? [y] Yes, Unmount & Quit  /  [n] Cancel"`
    * If a background file copy is currently in progress, warn the user:
      > `"Transfer in progress! Wait for copy to finish before unmounting. Press [n] to return."`
