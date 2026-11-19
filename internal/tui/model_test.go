@@ -103,8 +103,8 @@ func TestTypingFiltersBothPanesAndPreservesSafeExit(t *testing.T) {
 		pane.entries = []fsops.Entry{{Name: "Documents", Folder: true}, {Name: query + ".pdf"}}
 		for _, r := range query {
 			_, cmd := m.Update(runes(string(r)))
-			if cmd != nil || m.confirm {
-				t.Fatalf("typing %q in pane %d ran a command", r, i)
+			if cmd == nil || m.confirm {
+				t.Fatalf("typing %q in pane %d did not start a search", r, i)
 			}
 		}
 		if pane.query != query || len(pane.visible()) != 1 || pane.visible()[0].Name != query+".pdf" {

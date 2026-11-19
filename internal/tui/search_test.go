@@ -49,7 +49,7 @@ func TestRecursiveSearchIncludesRelativePathsAndSkipsLinks(t *testing.T) {
 func TestRecursiveSearchLimit(t *testing.T) {
 	tree := fstest.MapFS{}
 	for i := range searchLimit + 2 {
-		tree[fmt.Sprintf("match%04d", i)] = &fstest.MapFile{}
+		tree[fmt.Sprintf("nested/match%04d", i)] = &fstest.MapFile{}
 	}
 	var result searchResult
 	if err := result.searchTree(context.Background(), tree, "", "", "match"); err != nil {
@@ -70,19 +70,14 @@ func TestSearchControlsInBothPanes(t *testing.T) {
 	m.panes[0].entries = []fsops.Entry{{Name: "Brave", Folder: true}}
 	for index := range m.panes {
 		m.focus = index
-		m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'s'}, Alt: true})
-		m.key(runes("usbfs"))
-		if !strings.Contains(ansi.Strip(m.View()), "Search subfolders") {
-			t.Fatal("search input did not open")
-		}
-		run := m.key(tea.KeyMsg{Type: tea.KeyEnter})
-		if run == nil || m.cancelSearch == nil || !m.busy {
+		run := m.key(runes("usbfs"))
+		if run == nil || m.panes[index].search == nil || m.busy {
 			t.Fatal("search did not start")
 		}
 		var result searchResult
 		if index == 0 {
 			// Simulate entries returned by a mounted share.
-			result = searchResult{index: index, query: "usbfs"}
+			result = searchResult{index: index, job: m.panes[index].search}
 			tree := fstest.MapFS{"docs/USB FS": {Mode: os.ModeDir}}
 			if err := result.searchTree(context.Background(), tree, "Brave", "", "usbfs"); err != nil {
 				t.Fatal(err)
@@ -92,30 +87,56 @@ func TestSearchControlsInBothPanes(t *testing.T) {
 		}
 		m.Update(result)
 		p := &m.panes[index]
-		if p.search != "usbfs" || len(p.visible()) != 1 || !strings.Contains(ansi.Strip(m.View()), "docs/USB FS") {
+		if p.query != "usbfs" || len(p.visible()) != 1 || !strings.Contains(ansi.Strip(m.View()), "docs/USB FS") {
 			t.Fatalf("pane %d did not show search results: %+v", index, p)
 		}
 		if index == 0 {
 			m.key(tea.KeyMsg{Type: tea.KeyEsc})
-			if p.search != "" || m.confirm || p.visible()[0].Name != "Brave" {
+			if p.query != "" || m.confirm || p.visible()[0].Name != "Brave" {
 				t.Fatal("closing search did not restore the external pane")
 			}
 		} else {
 			m.Update(m.key(tea.KeyMsg{Type: tea.KeyRight})())
-			if p.search != "" || p.path != filepath.Join(host, "docs", "USB FS") {
+			if p.query != "" || p.path != filepath.Join(host, "docs", "USB FS") {
 				t.Fatalf("opening a recursive result navigated to %s", p.path)
 			}
 		}
 	}
 }
 
-func TestSearchCancelDiscardsPendingResult(t *testing.T) {
-	m := New(&device.Session{}, t.TempDir())
+func TestLiveSearchDiscardsSupersededAndClearedResults(t *testing.T) {
+	host := t.TempDir()
+	for _, name := range []string{"notes/old.txt", "notes/new.txt"} {
+		path := filepath.Join(host, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, nil, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := New(&device.Session{}, host)
 	m.ready, m.focus = true, 1
-	run := m.startSearch(1, "test")
+	p := &m.panes[1]
+	old := m.key(runes("old"))()
+	m.key(tea.KeyMsg{Type: tea.KeyCtrlU})
+	run := m.key(runes("new"))
+	m.Update(old)
+	if p.query != "new" || len(p.visible()) != 0 {
+		t.Fatal("an older search replaced the current query")
+	}
+	current := run()
+	m.Update(current)
+	if len(p.visible()) != 1 || p.visible()[0].Name != "notes/new.txt" {
+		t.Fatalf("current results = %v", p.visible())
+	}
+	stillPending := m.key(tea.KeyMsg{Type: tea.KeyBackspace})
 	m.key(tea.KeyMsg{Type: tea.KeyEsc})
-	m.Update(run())
-	if m.busy || m.cancelSearch != nil || m.panes[1].search != "" || m.status != "Search cancelled." {
-		t.Fatalf("cancelled search changed the UI: %q", m.status)
+	if stillPending() != nil {
+		t.Fatal("clearing the filter did not cancel the pending search")
+	}
+	m.Update(current)
+	if p.search != nil || p.filtering || len(p.visible()) != 0 || m.confirm {
+		t.Fatal("cleared results resurfaced or Esc opened the exit confirmation")
 	}
 }

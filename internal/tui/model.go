@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,22 +17,22 @@ import (
 )
 
 type pane struct {
-	path      string
-	entries   []fsops.Entry
-	cursor    int
-	filtering bool
-	query     string
-	matches   []fsops.Entry
-	search    string
-	results   []fsops.Entry
+	path         string
+	entries      []fsops.Entry
+	cursor       int
+	filtering    bool
+	query        string
+	matches      []fsops.Entry
+	search       *searchJob
+	results      []fsops.Entry
+	searchStatus string
 }
 
 func (p *pane) replace(path string, entries []fsops.Entry) {
 	previous := ""
 	visible := p.visible()
 	if p.path != path {
-		p.filtering, p.query = false, ""
-		p.search, p.results = "", nil
+		p.setFilter(false, "")
 	} else if p.cursor < len(visible) {
 		previous = visible[p.cursor].Name
 	}
@@ -48,9 +47,6 @@ func (p *pane) replace(path string, entries []fsops.Entry) {
 }
 
 func (p *pane) visible() []fsops.Entry {
-	if p.search != "" {
-		return p.results
-	}
 	if p.filtering {
 		return p.matches
 	}
@@ -58,6 +54,10 @@ func (p *pane) visible() []fsops.Entry {
 }
 
 func (p *pane) setFilter(active bool, query string) {
+	if p.query != query || p.filtering != active {
+		p.stopSearch()
+		p.results, p.searchStatus = nil, ""
+	}
 	p.filtering, p.query, p.cursor = active, query, 0
 	if !active {
 		p.matches = nil
@@ -70,6 +70,7 @@ func (p *pane) setFilter(active bool, query string) {
 			p.matches = append(p.matches, entry)
 		}
 	}
+	p.matches = append(p.matches, p.results...)
 }
 
 func filterText(value string) string {
@@ -81,13 +82,12 @@ func filterText(value string) string {
 	}, value)
 }
 
-func (p *pane) hasQuery() bool { return p.filtering || p.search != "" }
-
 func (p *pane) queryLabel() string {
-	if p.search != "" {
-		return "Search: " + clean(p.search)
+	label := "Filter: " + clean(p.query)
+	if p.search != nil {
+		return label + " · Searching subfolders…"
 	}
-	return "Filter: " + clean(p.query)
+	return label + p.searchStatus
 }
 
 type Model struct {
@@ -107,8 +107,6 @@ type Model struct {
 	folder               *folderCopy
 	drag                 *fileDrag
 	create               *createPrompt
-	searchInput          *textinput.Model
-	cancelSearch         context.CancelFunc
 	deleteName           string
 	help                 bool
 	helpOffset           int
@@ -232,6 +230,7 @@ func (m *Model) scan() tea.Cmd {
 }
 
 func (m *Model) navigate(index int, path string) tea.Cmd {
+	m.panes[index].stopSearch()
 	m.busy = true
 	session := m.session
 	return m.work(func() tea.Msg {

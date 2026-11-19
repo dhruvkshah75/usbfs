@@ -63,8 +63,7 @@ Once mounted, render a responsive side-by-side dual-pane TUI:
 * `Left`: Navigate to the parent directory (clamped at the external device root).
 * `Tab`: Switch active focus between the External Device pane and the Linux Local pane.
 * Use `Alt+I` to show the selected item’s name, location, path, type, file size, and modification time in a centered dialog.
-* Use `Alt+S` to search subfolders in either pane. Show relative paths in the results and allow cancellation with `Esc`.
-* Type to filter names in the focused pane's current folder. Each pane keeps its own filter. `Backspace` erases a character and `Ctrl+U` clears the filter.
+* Typing searches names in the focused pane's current folder and its subfolders. Show current-folder matches immediately and display nested matches by relative path. Each pane keeps its own search. `Backspace` erases a character, and `Esc` or `Ctrl+U` clears the search.
 * `Alt+c`: Copy selected file to the directory currently open in the opposite pane:
   * **External Device $\rightarrow$ Linux Host (Download):** Copies file from external device to local Linux directory using buffered `io.Copy` inside a background goroutine so the UI stays responsive.
   * **Linux Host $\rightarrow$ External Device (Upload):** Copies file from Linux directory into the currently open folder on the external device. If the destination file already exists on the external device, **block overwriting** and notify the user (*"Overwrite blocked: file already exists on external device"*). If the target folder on the external device is read-only/sandboxed, catch the `EACCES`/`EPERM` error gracefully and display *"Upload blocked: external device folder is read-only."*
@@ -73,7 +72,7 @@ Once mounted, render a responsive side-by-side dual-pane TUI:
 * `Ctrl+N` creates a folder and `Ctrl+F` creates an empty file. Enter a single name in the prompt to create it in the focused pane's open folder. On iOS, open a mounted share first. Existing names and write restrictions block creation.
 * `Delete` removes one selected regular file from the Linux host after confirmation with `y`. Press `n` or `Esc` to cancel. Directories, symbolic links, and external-device items are protected.
 * `F1` opens a centered, scrollable command reference over the panes. Press `F1` or `Esc` to close it.
-* `Alt+r`: Refresh directory listings in both panes.
+* `Alt+r`: Refresh directory listings and rerun active searches in both panes.
 * `Alt+q` or `Esc`: Trigger the **Safe Unmount & Exit Confirmation Modal**. Plain `q` also works during device setup.
 
 ---

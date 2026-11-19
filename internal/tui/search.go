@@ -2,11 +2,11 @@ package tui
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/fs"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,7 +19,7 @@ const searchLimit = 1000
 
 type searchResult struct {
 	index      int
-	query      string
+	job        *searchJob
 	entries    []fsops.Entry
 	unreadable int
 	limited    bool
@@ -41,7 +41,7 @@ func (r *searchResult) searchTree(ctx context.Context, tree fs.FS, prefix, exclu
 			r.unreadable++
 			return nil
 		}
-		if path == "." || (!item.IsDir() && !item.Type().IsRegular()) ||
+		if path == "." || (prefix == "" && filepath.Dir(path) == ".") || (!item.IsDir() && !item.Type().IsRegular()) ||
 			!strings.Contains(filterText(item.Name()), needle) {
 			return nil
 		}
@@ -55,7 +55,11 @@ func (r *searchResult) searchTree(ctx context.Context, tree fs.FS, prefix, exclu
 }
 
 func searchPane(ctx context.Context, session *device.Session, index int, path, query string) searchResult {
-	result := searchResult{index: index, query: query}
+	result := searchResult{index: index}
+	if ctx.Err() != nil {
+		result.err = ctx.Err()
+		return result
+	}
 	needle := filterText(query)
 	if index == 0 && path == "." {
 		shares, err := session.Shares()
@@ -70,16 +74,7 @@ func searchPane(ctx context.Context, session *device.Session, index int, path, q
 				}
 				root, err := openFolder(session, 0, share)
 				if err == nil {
-					if strings.Contains(filterText(share), needle) {
-						if len(result.entries) == searchLimit {
-							result.limited = true
-						} else {
-							result.entries = append(result.entries, fsops.Entry{Name: share, Folder: true})
-						}
-					}
-					if !result.limited {
-						err = result.searchTree(ctx, root.FS(), share, "", needle)
-					}
+					err = result.searchTree(ctx, root.FS(), share, "", needle)
 					root.Close()
 				}
 				if err != nil {
@@ -109,42 +104,64 @@ func searchPane(ctx context.Context, session *device.Session, index int, path, q
 	return result
 }
 
-func (m *Model) startSearch(index int, query string) tea.Cmd {
-	query = strings.TrimSpace(query)
+type searchJob struct {
+	cancel context.CancelFunc
+}
+
+func (p *pane) stopSearch() {
+	if p.search != nil {
+		p.search.cancel()
+		p.search = nil
+	}
+}
+
+func (m *Model) searchQuery(index int, query string) tea.Cmd {
+	p := &m.panes[index]
+	p.setFilter(query != "", query)
+	p.stopSearch()
 	if filterText(query) == "" {
-		m.message("Enter a filename to search subfolders.", true)
 		return nil
 	}
+
 	ctx, cancel := context.WithCancel(context.Background())
-	m.busy, m.cancelSearch = true, cancel
-	m.message("Searching subfolders… Press Esc to cancel.", false)
-	session, path := m.session, m.panes[index].path
-	return m.work(func() tea.Msg { return searchPane(ctx, session, index, path, query) })
+	job := &searchJob{cancel: cancel}
+	p.search = job
+	session, path := m.session, p.path
+	run := m.work(func() tea.Msg {
+		result := searchPane(ctx, session, index, path, query)
+		result.job = job
+		return result
+	})
+	return func() tea.Msg {
+		delay := time.NewTimer(180 * time.Millisecond)
+		defer delay.Stop()
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-delay.C:
+			return run()
+		}
+	}
 }
 
 func (m *Model) searchFinished(result searchResult) {
-	m.busy = false
-	cancelled := m.cancelSearch == nil || errors.Is(result.err, context.Canceled)
-	if m.cancelSearch != nil {
-		m.cancelSearch()
-		m.cancelSearch = nil
-	}
-	if cancelled {
-		return
-	}
-	if result.err != nil {
-		m.message("Cannot search folder: "+result.err.Error(), true)
-		return
-	}
 	p := &m.panes[result.index]
-	p.search, p.results, p.cursor = result.query, result.entries, 0
-	count := fmt.Sprintf("%d matches", len(result.entries))
-	if result.limited {
-		count = fmt.Sprintf("First %d matches. Refine the query for more specific results.", searchLimit)
+	if result.job == nil || result.job != p.search {
+		return
 	}
-	m.message(count, result.unreadable > 0 || result.limited)
+	p.stopSearch()
+	p.searchStatus = ""
+	if result.err != nil {
+		p.searchStatus = " · Subfolders unavailable"
+		return
+	}
+	p.results = result.entries
+	p.replace(p.path, p.entries)
+	if result.limited {
+		p.searchStatus = fmt.Sprintf(" · First %d nested matches", searchLimit)
+	}
 	if result.unreadable > 0 {
-		m.statusDetail = fmt.Sprintf("%d locations could not be read.", result.unreadable)
+		p.searchStatus += fmt.Sprintf(" · %d unreadable", result.unreadable)
 	}
 }
 

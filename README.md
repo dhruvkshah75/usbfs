@@ -126,19 +126,18 @@ Keep the mount directory reserved for `usbfs`. It is used as a filesystem mount 
 | Select a row | `↑`, `↓`, or click a row. The mouse wheel moves the selection. |
 | Enter a folder or open a file | `→` or `Enter` |
 | Go up a directory | `←`. The device pane stops at its mount root. |
-| Filter the focused pane | Type any letters or other printable characters. `Backspace` erases one character and `Ctrl+U` clears the filter. |
-| Search subfolders in either pane | `Alt+S`, enter a name, and press `Enter`. `Esc` cancels a running search or closes the results. |
+| Search the focused pane and its subfolders | Start typing. `Backspace` erases one character, and `Esc` or `Ctrl+U` clears the search. |
 | Show selected item details | `Alt+I`. Scroll with `↑` / `↓` or the mouse wheel, and press `Esc` to close. |
 | Copy to the other pane | `Alt+C` or drag a file or folder. Confirm folder copies with `y` or cancel with `n` / `Esc`. |
-| Refresh | `Alt+R` refreshes both directory listings or reruns the focused recursive search. |
+| Refresh | `Alt+R` refreshes both directory listings and reruns active searches. |
 | Create a directory or empty file | `Ctrl+N` directory, `Ctrl+F` empty file. Name it and press `Enter`, or press `Esc` to cancel. |
 | Delete a regular Linux file | `Delete`, then `y` to permanently delete or `n` / `Esc` to cancel |
 | Open or close the centered Help window | `F1`. `Esc` also closes it. Scroll with `↑` / `↓`, the mouse wheel, `PgUp` / `PgDn`, or `Home` / `End`. |
-| Exit | `Esc` or `Alt+Q`. If a device is mounted, confirm with `y` or cancel with `n` / `Esc`. Plain `q` also works on the setup screen. |
+| Exit | `Esc` or `Alt+Q`. During a search, the first `Esc` clears it. If a device is mounted, confirm exit with `y` or cancel with `n` / `Esc`. Plain `q` also works on the setup screen. |
 
-The coral highlight shows the active selection. `[DIR]` marks folders and `[LOCKED]` marks entries the pane cannot open. Filtering is a case-insensitive filename match in the current directory and ignores whitespace when matching. Each pane keeps its own query when you switch focus. Changing directories clears that pane's filter. If the terminal is narrow, the app stacks the panes or displays just the focused one.
+The coral highlight shows the active selection. `[DIR]` marks folders and `[LOCKED]` marks entries the pane cannot open. Typing matches names in the focused pane case-insensitively and ignores whitespace. Current-folder matches appear first, and subfolder matches appear below them after a short pause. Each pane keeps its own query when you switch focus. Changing directories clears that pane's query. If the terminal is narrow, the app stacks the panes or displays just the focused one.
 
-Recursive search starts from the focused folder and matches item names with the same rules as the live filter. From the iPhone/iPad share picker, it searches across the mounted shares. Results show relative paths so identical names can be distinguished. Use the usual controls to open or copy a result, or press `Esc` or `←` to return to the directory listing. Search skips symbolic links, reports unreadable locations, and shows the first 1,000 matches.
+From the iPhone/iPad share picker, searching covers all mounted shares. Nested results show relative paths so identical names can be distinguished. Use the usual controls to open or copy a result. The recursive walk skips symbolic links, reports unreadable locations, and shows up to 1,000 nested matches.
 
 ## Copy and manage files
 

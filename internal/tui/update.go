@@ -109,9 +109,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.create != nil {
 			m.create.input.Width = m.nameWidth()
 		}
-		if m.searchInput != nil {
-			m.searchInput.Width = m.nameWidth()
-		}
+
 	case tea.MouseMsg:
 		if m.details != nil {
 			switch msg.Button {
@@ -176,6 +174,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if host && external {
 			m.message("Directory listings refreshed.", false)
 		}
+		var searches []tea.Cmd
+		for i, ok := range []bool{external, host} {
+			if ok && m.panes[i].filtering {
+				searches = append(searches, m.searchQuery(i, m.panes[i].query))
+			}
+		}
+		return m, tea.Batch(searches...)
 	case transferTick:
 		if msg.copy == m.transfer {
 			return m, watch(msg.copy)
@@ -228,11 +233,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			for i, entry := range p.results {
 				if entry.Name == msg.name {
 					p.results = append(p.results[:i], p.results[i+1:]...)
-					p.cursor = max(0, min(p.cursor, len(p.results)-1))
+					p.replace(p.path, p.entries)
 					break
 				}
 			}
 			m.message("✓ Deleted "+msg.name+" from Linux", false)
+			if p.filtering {
+				return m, m.searchQuery(1, p.query)
+			}
 		default:
 			m.message("Deleted "+msg.name+" from Linux. Refresh failed: "+msg.target.err.Error(), true)
 		}
@@ -255,11 +263,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m, m.key(msg)
 	default:
-		if m.searchInput != nil {
-			var cmd tea.Cmd
-			*m.searchInput, cmd = m.searchInput.Update(msg)
-			return m, cmd
-		}
+
 		if m.create != nil {
 			var cmd tea.Cmd
 			m.create.input, cmd = m.create.input.Update(msg)
@@ -273,8 +277,8 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 	m.drag = nil
 	key := msg.String()
 	if key == "ctrl+c" {
-		if m.cancelSearch != nil {
-			m.cancelSearch()
+		for i := range m.panes {
+			m.panes[i].stopSearch()
 		}
 		return tea.Quit
 	}
@@ -293,29 +297,7 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 	}
-	if m.searchInput != nil {
-		input := m.searchInput
-		switch key {
-		case "esc":
-			m.searchInput = nil
-		case "enter":
-			if filterText(input.Value()) != "" {
-				m.searchInput = nil
-				return m.startSearch(m.focus, input.Value())
-			}
-		default:
-			var cmd tea.Cmd
-			*input, cmd = input.Update(msg)
-			return cmd
-		}
-		return nil
-	}
-	if m.cancelSearch != nil && key == "esc" {
-		m.cancelSearch()
-		m.cancelSearch = nil
-		m.message("Search cancelled.", false)
-		return nil
-	}
+
 	if m.folder != nil {
 		switch key {
 		case "y":
@@ -334,8 +316,8 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 			m.confirm = false
 		case "y":
 			if m.transfer == nil {
-				if m.cancelSearch != nil {
-					m.cancelSearch()
+				for i := range m.panes {
+					m.panes[i].stopSearch()
 				}
 				return tea.Quit
 			}
@@ -395,19 +377,11 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 	if m.ready {
 		p := &m.panes[m.focus]
 		switch {
-		case p.search != "" && (key == "esc" || key == "left" || key == "ctrl+u"):
-			p.search, p.results, p.cursor = "", nil, 0
-			m.message("", false)
-			return nil
-		case p.search != "" && (key == "backspace" || (!msg.Alt && (msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace))):
-			return nil
-		case p.filtering && key == "ctrl+u":
-			p.setFilter(false, "")
-			return nil
+		case p.filtering && (key == "ctrl+u" || key == "esc"):
+			return m.searchQuery(m.focus, "")
 		case p.filtering && key == "backspace":
 			_, size := utf8.DecodeLastRuneInString(p.query)
-			p.setFilter(len(p.query) > size, p.query[:len(p.query)-size])
-			return nil
+			return m.searchQuery(m.focus, p.query[:len(p.query)-size])
 		case !msg.Alt && (msg.Type == tea.KeyRunes || msg.Type == tea.KeySpace):
 			input := strings.Map(func(r rune) rune {
 				if unicode.IsPrint(r) {
@@ -419,7 +393,7 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 				input = " "
 			}
 			if input != "" {
-				p.setFilter(true, p.query+input)
+				return m.searchQuery(m.focus, p.query+input)
 			}
 			return nil
 		}
@@ -479,19 +453,7 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 		if len(entries) > 0 {
 			return m.inspectItem(m.focus, filepath.Join(p.path, entries[p.cursor].Name))
 		}
-	case "alt+s":
-		input := newInput(m.nameWidth(), "Filename")
-		if p.search != "" {
-			input.SetValue(p.search)
-		} else {
-			input.SetValue(p.query)
-		}
-		m.searchInput = &input
-		return m.searchInput.Focus()
 	case "alt+r":
-		if p.search != "" {
-			return m.startSearch(m.focus, p.search)
-		}
 		return m.refresh()
 	case "delete":
 		switch {

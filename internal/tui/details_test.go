@@ -31,8 +31,9 @@ func TestDetailsShortcutReadsSelectedSearchResult(t *testing.T) {
 	m := New(&device.Session{}, dir)
 	m.ready, m.focus = true, 1
 	p := &m.panes[1]
-	p.search = "usbfs"
+	p.setFilter(true, "usbfs")
 	p.results = []fsops.Entry{{Name: filepath.Join("docs", name)}}
+	p.setFilter(true, "usbfs")
 	shortcut := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'i'}, Alt: true}
 	cmd := m.key(shortcut)
 	if cmd == nil {
@@ -52,7 +53,7 @@ func TestDetailsShortcutReadsSelectedSearchResult(t *testing.T) {
 		t.Fatalf("details did not scroll on a small terminal:\n%s", ansi.Strip(m.View()))
 	}
 	m.key(tea.KeyMsg{Type: tea.KeyEsc})
-	if m.details != nil || p.search != "usbfs" || !strings.Contains(ansi.Strip(m.View()), "Search: usbfs") {
+	if m.details != nil || p.query != "usbfs" || !strings.Contains(ansi.Strip(m.View()), "Filter: usbfs") {
 		t.Fatal("closing details changed the search pane")
 	}
 	if err := os.Remove(path); err != nil {
