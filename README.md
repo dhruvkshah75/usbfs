@@ -1,6 +1,6 @@
 # usbfs
 
-`usbfs` is a dual-pane terminal file manager for copying files between a Linux computer and a USB-connected Android phone, iPhone, or iPad. The external device is on the left and the Linux host is on the right. Browse and filter either pane, open files in Linux desktop applications, and copy individual files with the keyboard or mouse.
+`usbfs` is a dual-pane terminal file manager for copying files between a Linux computer and a USB-connected Android phone, iPhone, or iPad. The external device is on the left and the Linux host is on the right. Browse and filter either pane, open files in Linux desktop applications, and copy files and folders with the keyboard or mouse.
 
 [Install](#install) · [Connect a device](#connect-a-device) · [Controls](#controls) · [Copy and manage files](#copy-and-manage-files) · [Safe exit](#safe-exit) · [Troubleshooting](#troubleshooting) · [Development](#development)
 
@@ -127,7 +127,7 @@ Keep the mount directory reserved for `usbfs`. It is used as a filesystem mount 
 | Enter a folder or open a file | `→` or `Enter` |
 | Go up a directory | `←`. The device pane stops at its mount root. |
 | Filter the focused pane | Type any letters or other printable characters. `Backspace` erases one character and `Ctrl+U` clears the filter. |
-| Copy to the other pane's open folder | `Alt+C`, or drag a file to the other pane |
+| Copy to the other pane | `Alt+C` or drag a file or folder. Confirm folder copies with `y` or cancel with `n` / `Esc`. |
 | Refresh both panes | `Alt+R` |
 | Create a directory or empty file | `Ctrl+N` directory, `Ctrl+F` empty file. Name it and press `Enter`, or press `Esc` to cancel. |
 | Delete a regular Linux file | `Delete`, then `y` to permanently delete or `n` / `Esc` to cancel |
@@ -138,13 +138,13 @@ The coral highlight shows the active selection. `[DIR]` marks folders and `[LOCK
 
 ## Copy and manage files
 
-- **Keyboard copy.** Open the destination folder in one pane, switch to the source pane, select a file, and press `Alt+C`.
-- **Mouse copy.** Drag a file into the opposite pane. Drop onto a folder row to copy inside it, or drop into blank space to copy into that pane's open folder. The destination highlights during the drag, and the status area reports the target, progress, and success or failure. Use this in either direction.
+- **Keyboard copy.** Open the destination folder in one pane, switch to the source pane, select a file or folder, and press `Alt+C`.
+- **Mouse copy.** Drag a file or folder into the opposite pane. Drop onto a folder row to copy inside it, or drop into blank space to copy into that pane's open folder. The destination highlights during the drag, and the status area reports the target, progress, and success or failure. Use this in either direction.
 - **Create items.** Open the folder where you want the new directory or empty file and press `Ctrl+N` or `Ctrl+F`. Enter a single name. For iPhone/iPad, open a mounted share such as Goodnotes or Brave first. Available operations depend on the device and the folder's permissions.
 - **Open files.** Select a file and press `Enter` or `→` to launch the Linux default app with `xdg-open`. For a device file, the app receives the mounted file path. If you plan to edit the file, first copy it to Linux and edit that copy. File operations in the launched desktop app are governed by that app and the filesystem.
 - **Delete on Linux.** Select a regular file in the Linux host pane, press `Delete`, and read the confirmation before pressing `y`. The action is permanent. Folders, including empty ones, symbolic links, and external-device items are protected.
 
-Copying handles one file at a time. To copy several files, repeat the operation for each. Both directions reject destination name collisions. New-item creation also rejects names that already exist. Rename, move, and external deletion are outside the in-app file operations.
+Folder copying previews the destination and file count before starting. It copies regular files and empty folders, skips symbolic links and other special entries, and reports conflicts and failures. Choose a destination where the top-level folder name is free. If a copy fails partway through, items already copied remain in place. Both directions preserve existing items. New-item creation also rejects names that already exist. Rename, move, and external deletion are outside the in-app file operations.
 
 Downloads are written to a temporary file in the destination and published at the final name only after a complete copy. The Linux destination filesystem must support hard links for that final step. An interrupted or unverified upload may leave a new partial file on the device. Check it on the device before retrying, since `usbfs` will reject the occupied name. Large MTP transfers may also need temporary disk space on Linux, depending on the driver. [jmtpfs implementation notes](https://github.com/JasonFerrara/jmtpfs#readme)
 

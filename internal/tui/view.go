@@ -71,7 +71,7 @@ func (m *Model) View() string {
 		screen := line(foreground(coral, surface), m.width, "F1 Help · Esc")
 		if m.help {
 			screen = line(foreground(coral, surfaceElevated), m.width, "F1/Esc Close")
-		} else if m.confirm || m.create != nil || m.deleteName != "" {
+		} else if m.confirm || m.folder != nil || m.create != nil || m.deleteName != "" {
 			screen = m.compactModal()
 		}
 		return m.fillScreen(screen)
@@ -101,7 +101,7 @@ func (m *Model) View() string {
 	screen := lipgloss.JoinVertical(lipgloss.Left, header, main, footer)
 	if m.help {
 		screen = m.centerDialog(screen, m.helpDialog())
-	} else if m.confirm || m.create != nil || m.deleteName != "" {
+	} else if m.confirm || m.folder != nil || m.create != nil || m.deleteName != "" {
 		screen = m.modal(screen)
 	}
 	return m.fillScreen(screen)
@@ -264,6 +264,9 @@ func (m *Model) footer() string {
 		copy := m.transfer
 		status, ink = ansi.Strip(m.spinner.View())+" Copying "+clean(copy.name), coral
 		detail = "→ " + clean(copy.destination)
+		if copy.folder {
+			detail = fmt.Sprintf("%d/%d files processed · %s", copy.count.Load(), copy.total.Load(), detail)
+		}
 		if total := copy.total.Load(); total >= 0 {
 			percent := 100
 			if total > 0 {
@@ -313,6 +316,15 @@ func (m *Model) footer() string {
 func (m *Model) modal(screen string) string {
 	width := min(56, m.width-2)
 	prompt, controls := "Unmount device and exit?", "[y] Unmount & Quit   [n] Cancel"
+	if m.folder != nil {
+		job := m.folder
+		prompt = fmt.Sprintf("Copy %s? %d files", clean(filepath.Base(job.source)), job.plan.Files)
+		if skipped := job.plan.Skipped + job.plan.Failed; skipped > 0 {
+			prompt += fmt.Sprintf(" · %d excluded", skipped)
+		}
+		prompt += "\n→ " + clean(destinationLabel(1-job.from, job.target))
+		controls = "[y] Copy folder   [n/Esc] Cancel"
+	}
 	if m.transfer != nil {
 		prompt, controls = "Transfer in progress! Wait for the copy to finish before unmounting.", "[n] Return to transfer"
 	}
@@ -359,6 +371,9 @@ func (m *Model) compactModal() string {
 		return styledLine(m.width, m.create.input.View(), surfaceElevated)
 	}
 	label := "y Unmount / n"
+	if m.folder != nil {
+		label = "y Copy / n"
+	}
 	if m.deleteName != "" {
 		label = "y Delete / n"
 		if m.height >= 2 {

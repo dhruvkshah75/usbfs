@@ -88,6 +88,7 @@ type Model struct {
 	width, height        int
 	spinner              spinner.Model
 	transfer             *transfer
+	folder               *folderCopy
 	drag                 *fileDrag
 	create               *createPrompt
 	deleteName           string
@@ -110,6 +111,7 @@ func (p *createPrompt) title() string {
 type transfer struct {
 	name, destination string
 	count, total      atomic.Int64
+	folder            bool
 }
 
 type pollMsg struct{}
@@ -229,6 +231,7 @@ func (m *Model) refresh() tea.Cmd {
 }
 
 type copyResult struct {
+	folder      *fsops.FolderReport
 	download    bool
 	name        string
 	destination string
@@ -237,6 +240,13 @@ type copyResult struct {
 }
 
 func (m *Model) startCopy(from int, entry fsops.Entry, target string) tea.Cmd {
+	if 1-from == 0 && target == "." && m.platform == device.Apple {
+		m.message("Open a mounted folder on the external device first.", true)
+		return nil
+	}
+	if entry.Folder {
+		return m.prepareFolder(from, entry, target)
+	}
 	copy := &transfer{name: entry.Name, destination: destinationLabel(1-from, target)}
 	copy.total.Store(-1)
 	m.busy, m.transfer = true, copy

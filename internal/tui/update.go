@@ -71,6 +71,10 @@ func (m *Model) copyFinished(result copyResult) {
 	if result.target.path != "" && result.target.err == nil {
 		m.panes[result.target.index].replace(result.target.path, result.target.entries)
 	}
+	if result.folder != nil {
+		m.folderFinished(result.name, *result.folder, result.target.err)
+		return
+	}
 	if result.err == nil {
 		m.message("✓ Copied "+result.name, false)
 		m.statusDetail = "→ " + result.destination
@@ -165,6 +169,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.copy == m.transfer {
 			return m, watch(msg.copy)
 		}
+	case folderPrepared:
+		m.busy = false
+		if msg.err != nil {
+			m.message("Cannot scan folder: "+msg.err.Error(), true)
+		} else if !m.confirm {
+			m.folder, m.help = &msg.copy, false
+			m.message("", false)
+		}
 	case copyResult:
 		m.copyFinished(msg)
 	case createResult:
@@ -229,6 +241,18 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 	key := msg.String()
 	if key == "ctrl+c" {
 		return tea.Quit
+	}
+	if m.folder != nil {
+		switch key {
+		case "y":
+			job := m.folder
+			m.folder = nil
+			return m.copyFolder(job)
+		case "n", "esc":
+			m.folder = nil
+			m.message("Folder copy cancelled.", false)
+		}
+		return nil
 	}
 	if m.confirm {
 		switch key {
@@ -412,8 +436,6 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 		switch {
 		case entry.Locked:
 			m.message("Cannot access this item. Check its permissions.", true)
-		case key == "alt+c" && entry.Folder:
-			m.message("Select a file to copy.", true)
 		case key == "alt+c":
 			return m.startCopy(m.focus, entry, m.panes[1-m.focus].path)
 		case entry.Folder:

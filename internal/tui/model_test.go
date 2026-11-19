@@ -367,3 +367,35 @@ func TestViewFillsTerminal(t *testing.T) {
 		}
 	}
 }
+
+func TestFolderKeyboardAndDragRequireConfirmation(t *testing.T) {
+	host := t.TempDir()
+	if err := os.Mkdir(filepath.Join(host, "Study"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(host, "Study", "quiz.txt"), []byte("test"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	m := New(&device.Session{}, host)
+	m.ready, m.focus = true, 1
+	m.panes[1].entries = []fsops.Entry{{Name: "Study", Folder: true}}
+	for _, drag := range []bool{false, true} {
+		var prepare tea.Cmd
+		if drag {
+			boxes := m.paneBoxes(m.paneHeight())
+			m.mouse(tea.MouseMsg{X: boxes[1].x + 3, Y: boxes[1].y + 3, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+			prepare = m.mouse(tea.MouseMsg{X: 3, Y: boxes[0].y + 6, Button: tea.MouseButtonLeft, Action: tea.MouseActionRelease})
+		} else {
+			prepare = m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}, Alt: true})
+		}
+		if prepare == nil {
+			t.Fatalf("folder copy did not prepare (drag = %t)", drag)
+		}
+		m.Update(prepare())
+		view := ansi.Strip(m.View())
+		if m.folder == nil || m.transfer != nil || !strings.Contains(view, "1 files") || !strings.Contains(view, "External device") {
+			t.Fatalf("folder copy did not show the planned destination and file count:\n%s", view)
+		}
+		m.key(tea.KeyMsg{Type: tea.KeyEsc})
+	}
+}

@@ -54,15 +54,18 @@ func Download(device *os.Root, source, hostDir string, progress func(int64, int6
 		return errors.New("choose a Linux destination outside the external device")
 	}
 
+	return downloadFile(host, filepath.Base(source), src, info, progress)
+}
+
+func downloadFile(host *os.Root, target string, src *os.File, info os.FileInfo, progress func(int64, int64)) error {
 	// Publish only a complete file, and use Link to atomically reject collisions.
-	target := filepath.Base(source)
 	if _, err := host.Lstat(target); !errors.Is(err, os.ErrNotExist) {
 		if err == nil {
 			return os.ErrExist
 		}
 		return err
 	}
-	temp := ".usbfs-" + rand.Text()
+	temp := filepath.Join(filepath.Dir(target), ".usbfs-"+rand.Text())
 	dest, err := host.OpenFile(temp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return err
@@ -81,6 +84,10 @@ func Upload(device *os.Root, source, deviceDir string, progress func(int64, int6
 	}
 	defer src.Close()
 	name := filepath.Join(deviceDir, filepath.Base(source))
+	return uploadFile(device, name, src, info, progress)
+}
+
+func uploadFile(device *os.Root, name string, src *os.File, info os.FileInfo, progress func(int64, int64)) error {
 	dest, err := openNewFile(device, name)
 	if err != nil {
 		return &StageError{"Cannot create file on external device", err}

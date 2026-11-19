@@ -92,7 +92,7 @@ func destinationLabel(index int, path string) string {
 }
 
 func (m *Model) mouse(msg tea.MouseMsg) tea.Cmd {
-	if !m.ready || m.busy || m.confirm || m.create != nil || m.deleteName != "" {
+	if !m.ready || m.busy || m.confirm || m.folder != nil || m.create != nil || m.deleteName != "" {
 		m.drag = nil
 		return nil
 	}
@@ -106,7 +106,7 @@ func (m *Model) mouse(msg tea.MouseMsg) tea.Cmd {
 		}
 		if index < 0 || index == drag.from {
 			if drag.moved || drag.x != msg.X || drag.y != msg.Y {
-				m.message("Copy cancelled. Drop the file in the opposite pane.", true)
+				m.message("Copy cancelled. Drop the item in the opposite pane.", true)
 			}
 			return nil
 		}
@@ -138,7 +138,7 @@ func (m *Model) mouse(msg tea.MouseMsg) tea.Cmd {
 			if row >= 0 {
 				p.cursor = row
 				entry := p.visible()[row]
-				if !entry.Folder && !entry.Locked {
+				if !entry.Locked && (!entry.Folder || !entry.Symlink) {
 					m.drag = &fileDrag{from: index, x: msg.X, y: msg.Y, entry: entry}
 				}
 			}
