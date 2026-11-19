@@ -125,7 +125,7 @@ func New(session *device.Session, cwd string) *Model {
 }
 
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(poll(), m.spinner.Tick)
+	return tea.Batch(tea.SetWindowTitle("usbfs"), poll(), m.spinner.Tick)
 }
 
 func poll() tea.Cmd {
