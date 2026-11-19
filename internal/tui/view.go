@@ -48,6 +48,14 @@ func styledLine(width int, text, background string) string {
 
 func fill(width int) string { return line(foreground(cream, surface), width, "") }
 
+func wrappedRows(style lipgloss.Style, width int, text string) string {
+	rows := strings.Split(ansi.Wrap(text, width, ""), "\n")
+	for i, row := range rows {
+		rows[i] = line(style, width, row)
+	}
+	return strings.Join(rows, "\n")
+}
+
 func card(border, background string) lipgloss.Style {
 	return foreground(cream, background).
 		Border(lipgloss.RoundedBorder()).
@@ -56,14 +64,17 @@ func card(border, background string) lipgloss.Style {
 }
 
 func (m *Model) View() string {
+	if m.width <= 0 || m.height <= 0 {
+		return ""
+	}
 	if m.width < 16 || m.height < 6 {
+		screen := line(foreground(coral, surface), m.width, "F1 Help · Esc")
 		if m.help {
-			return line(foreground(coral, surfaceElevated), m.width, "F1/Esc Close")
+			screen = line(foreground(coral, surfaceElevated), m.width, "F1/Esc Close")
+		} else if m.confirm || m.create != nil || m.deleteName != "" {
+			screen = m.compactModal()
 		}
-		if m.confirm || m.create != nil || m.deleteName != "" {
-			return m.compactModal()
-		}
-		return line(foreground(coral, surface), m.width, "F1 Help · Esc")
+		return m.fillScreen(screen)
 	}
 	header := line(foreground(coral, surfaceElevated).Bold(true), m.width, " usbfs")
 	if m.device.Kind != "" {
@@ -93,7 +104,21 @@ func (m *Model) View() string {
 	} else if m.confirm || m.create != nil || m.deleteName != "" {
 		screen = m.modal(screen)
 	}
-	return lipgloss.NewStyle().MaxHeight(m.height).Render(screen)
+	return m.fillScreen(screen)
+}
+
+func (m *Model) fillScreen(screen string) string {
+	rows := strings.SplitN(screen, "\n", m.height+1)
+	rows = rows[:min(len(rows), m.height)]
+	for i, row := range rows {
+		if lipgloss.Width(row) != m.width {
+			rows[i] = styledLine(m.width, row, surface)
+		}
+	}
+	for len(rows) < m.height {
+		rows = append(rows, fill(m.width))
+	}
+	return strings.Join(rows, "\n")
 }
 
 func (m *Model) waiting(height int) string {
@@ -112,13 +137,13 @@ func (m *Model) waiting(height int) string {
 	case m.platform == device.Apple:
 		title, hint = "Waiting for iPhone or iPad…", "Unlock your device and tap Trust if prompted."
 	}
-	heading := foreground(cream, surfaceElevated).Bold(true).Render(title)
 	if m.platform != "" && (m.mtpIssue == nil || m.busy) {
-		heading = m.spinner.View() + foreground(cream, surfaceElevated).Bold(true).Render(" "+title)
+		title = ansi.Strip(m.spinner.View()) + " " + title
 	}
-	body := heading +
-		"\n\n" + foreground(muted, surfaceElevated).Render(ansi.Wrap(hint, contentWidth, ""))
-	panel := card(outline, surfaceElevated).Width(width-2).Padding(1, 2).Render(ansi.Wrap(body, contentWidth, ""))
+	body := wrappedRows(foreground(cream, surfaceElevated).Bold(true), contentWidth, title) +
+		"\n" + line(foreground(cream, surfaceElevated), contentWidth, "") +
+		"\n" + wrappedRows(foreground(muted, surfaceElevated), contentWidth, hint)
+	panel := card(outline, surfaceElevated).Padding(1, 2).Render(body)
 	if width < 18 || lipgloss.Height(panel) > height {
 		if m.platform == "" {
 			title = "a Android  i Apple"
@@ -297,7 +322,7 @@ func (m *Model) modal(screen string) string {
 	contentWidth := width - 4
 	input := ""
 	if m.deleteName != "" {
-		input = foreground(coral, surfaceElevated).Render(ansi.Wrap(clean(m.deleteName), contentWidth, "")) + "\n"
+		input = wrappedRows(foreground(coral, surfaceElevated), contentWidth, clean(m.deleteName)) + "\n"
 	}
 	if m.create != nil {
 		destination := "external device"
@@ -307,9 +332,9 @@ func (m *Model) modal(screen string) string {
 		prompt, controls = m.create.title()+" · "+destination, "[Enter] Create   [Esc] Cancel"
 		input = styledLine(contentWidth, m.create.input.View(), surfaceElevated) + "\n"
 	}
-	body := foreground(cream, surfaceElevated).Bold(true).Render(ansi.Wrap(prompt, contentWidth, "")) + "\n" + input +
-		foreground(coral, surfaceElevated).Render(ansi.Wrap(controls, contentWidth, ""))
-	dialog := card(coral, surfaceElevated).Width(width-2).Padding(0, 1).Render(body)
+	body := wrappedRows(foreground(cream, surfaceElevated).Bold(true), contentWidth, prompt) + "\n" + input +
+		wrappedRows(foreground(coral, surfaceElevated), contentWidth, controls)
+	dialog := card(coral, surfaceElevated).Padding(0, 1).Render(body)
 	if lipgloss.Height(dialog) > m.height {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, m.compactModal(),
 			lipgloss.WithWhitespaceBackground(lipgloss.Color(surface)))
@@ -324,7 +349,7 @@ func (m *Model) centerDialog(screen, dialog string) string {
 	for i, row := range overlay {
 		behind := rows[y+i]
 		left, right := ansi.Cut(behind, 0, x), ansi.Cut(behind, x+width, m.width)
-		rows[y+i] = left + strings.Repeat(" ", max(0, x-lipgloss.Width(left))) + row + right
+		rows[y+i] = styledLine(x, left, surface) + row + right
 	}
 	return strings.Join(rows, "\n")
 }

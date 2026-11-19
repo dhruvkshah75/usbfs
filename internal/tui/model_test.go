@@ -335,3 +335,35 @@ func TestLinuxDeleteRequiresConfirmation(t *testing.T) {
 		t.Fatalf("deletion or pane refresh failed: %v", err)
 	}
 }
+
+func TestViewFillsTerminal(t *testing.T) {
+	previous := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	t.Cleanup(func() { lipgloss.SetColorProfile(previous) })
+
+	for _, size := range [][2]int{{12, 8}, {28, 5}, {32, 12}, {51, 19}, {117, 26}} {
+		m := New(&device.Session{}, "/home/user")
+		m.width, m.height = size[0], size[1]
+		m.platform = device.Android
+		for _, state := range []struct {
+			name                 string
+			ready, help, confirm bool
+		}{
+			{name: "waiting"},
+			{name: "panes", ready: true},
+			{name: "help", ready: true, help: true},
+			{name: "confirm", ready: true, confirm: true},
+		} {
+			m.ready, m.help, m.confirm = state.ready, state.help, state.confirm
+			rows := strings.Split(m.View(), "\n")
+			if len(rows) != m.height {
+				t.Fatalf("%s %v: got %d rows", state.name, size, len(rows))
+			}
+			for i, row := range rows {
+				if ansi.StringWidth(row) != m.width || !strings.Contains(row, "\x1b[") {
+					t.Fatalf("%s %v: row %d does not fill the screen with theme colors: %q", state.name, size, i, row)
+				}
+			}
+		}
+	}
+}
