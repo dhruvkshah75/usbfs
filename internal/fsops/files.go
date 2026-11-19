@@ -8,11 +8,29 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+	"unicode"
 )
 
+// Create adds one new item inside dir without modifying any existing item.
+func Create(root *os.Root, dir, name string, folder bool) error {
+	if strings.TrimSpace(name) == "" || name == "." || name == ".." ||
+		strings.ContainsRune(name, filepath.Separator) || strings.ContainsFunc(name, unicode.IsControl) {
+		return errors.New("enter a single file or folder name")
+	}
+	path := filepath.Join(dir, name)
+	if folder {
+		return root.Mkdir(path, 0755)
+	}
+	file, err := openNewFile(root, path)
+	if err != nil {
+		return err
+	}
+	return confirmFile(root, path, 0, file.Close())
+}
+
 type Entry struct {
-	Name           string
-	Folder, Locked bool
+	Name                    string
+	Folder, Locked, Symlink bool
 }
 
 // List uses absolute paths for the host and root-relative paths for the device.
@@ -32,8 +50,8 @@ func List(root *os.Root, path string) ([]Entry, error) {
 	}
 	entries := make([]Entry, 0, len(items))
 	for _, item := range items {
-		entry := Entry{Name: item.Name(), Folder: item.IsDir()}
-		if root != nil || item.Type()&os.ModeSymlink != 0 {
+		entry := Entry{Name: item.Name(), Folder: item.IsDir(), Symlink: item.Type()&os.ModeSymlink != 0}
+		if root != nil || entry.Symlink {
 			info, err := stat(filepath.Join(path, item.Name()))
 			if err != nil {
 				entry.Locked = true

@@ -278,3 +278,41 @@ rm -f "$USBFS_TEST_DIR/state/$name"
 		t.Fatalf("mount sequence = %q, %v", calls, err)
 	}
 }
+
+func TestRemoveHostFileProtectsMountAndDirectories(t *testing.T) {
+	s, err := NewSession(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close(os.Stderr)
+	if err := os.Mkdir(s.Path(), 0700); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Dir(s.Path())
+	for _, name := range []string{filepath.Base(s.Path()), filepath.Base(s.Path()) + ".lock"} {
+		if err := s.RemoveHostFile(parent, name); err == nil {
+			t.Fatalf("removed protected item %s", name)
+		}
+	}
+	host := t.TempDir()
+	folder := filepath.Join(host, "notes")
+	if err := os.Mkdir(folder, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveHostFile(host, "notes"); err == nil {
+		t.Fatal("removed an empty folder")
+	}
+	note := filepath.Join(folder, "note.txt")
+	if err := os.WriteFile(note, []byte("test"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveHostFile(host, "notes"); err == nil {
+		t.Fatal("removed a nonempty folder")
+	}
+	if err := os.Symlink(folder, filepath.Join(host, "alias")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveHostFile(host, "alias"); err == nil {
+		t.Fatal("removed a symbolic link")
+	}
+}

@@ -373,4 +373,58 @@ func (s *Session) FilesystemIDs() ([]uint64, error) {
 	return ids, nil
 }
 
+// OpenHostDirectory rejects aliases to the device, including the local share picker.
+func (s *Session) OpenHostDirectory(path string) (*os.Root, error) {
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		return nil, err
+	}
+	info, err := root.Stat(".")
+	if err == nil && s.path != "" {
+		var ids []uint64
+		ids, err = s.FilesystemIDs()
+		if err == nil {
+			picker, _ := os.Stat(s.path)
+			if (picker != nil && os.SameFile(info, picker)) || slices.Contains(ids, info.Sys().(*syscall.Stat_t).Dev) {
+				err = errors.New("choose a Linux folder outside the external device")
+			}
+		}
+	}
+	if err != nil {
+		root.Close()
+		return nil, err
+	}
+	return root, nil
+}
+
+func (s *Session) RemoveHostFile(path, name string) error {
+	if !filepath.IsLocal(name) || name == "." || name != filepath.Base(name) {
+		return errors.New("choose a single file to delete")
+	}
+	root, err := s.OpenHostDirectory(path)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+	item, err := root.Lstat(name)
+	if err != nil {
+		return err
+	}
+	if !item.Mode().IsRegular() {
+		return errors.New("only regular files can be deleted")
+	}
+	for _, reserved := range []string{s.path, s.path + ".lock"} {
+		if info, err := os.Lstat(reserved); err == nil && os.SameFile(item, info) {
+			return errors.New("the usbfs mount directory and lock are protected")
+		}
+	}
+	parent, err := root.Open(".")
+	if err != nil {
+		return err
+	}
+	defer parent.Close()
+	// Unlinkat refuses directories even if the entry changes after Lstat.
+	return syscall.Unlinkat(int(parent.Fd()), name)
+}
+
 var ErrUnmounted = errors.New("external device is no longer mounted")

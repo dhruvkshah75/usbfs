@@ -8,6 +8,41 @@ import (
 	"testing"
 )
 
+func TestCreatePreservesExistingItemsAndStaysInsideRoot(t *testing.T) {
+	dir, outside := t.TempDir(), t.TempDir()
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	if err := Create(root, ".", "Study files", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := Create(root, "Study files", "quiz.txt", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Study files", "quiz.txt"), []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Create(root, "Study files", "quiz.txt", false); !errors.Is(err, os.ErrExist) {
+		t.Fatalf("existing file was accepted: %v", err)
+	}
+	if got, err := root.ReadFile("Study files/quiz.txt"); err != nil || string(got) != "original" {
+		t.Fatalf("existing file changed: %q, %v", got, err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "escape")); err != nil {
+		t.Fatal(err)
+	}
+	for _, folder := range []bool{true, false} {
+		if err := Create(root, ".", "../escaped", folder); err == nil {
+			t.Fatal("creation accepted a pathname as a name")
+		}
+		if err := Create(root, "escape", "escaped", folder); err == nil {
+			t.Fatal("creation followed a symlink outside its root")
+		}
+	}
+}
+
 func TestUploadCopiesNewFileAndPreservesConflicts(t *testing.T) {
 	rootDir, host := t.TempDir(), t.TempDir()
 	root, err := os.OpenRoot(rootDir)

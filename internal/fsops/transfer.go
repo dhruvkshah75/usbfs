@@ -20,6 +20,16 @@ type StageError struct {
 func (e *StageError) Error() string { return e.Stage + ": " + e.Err.Error() }
 func (e *StageError) Unwrap() error { return e.Err }
 
+func openNewFile(root *os.Root, path string) (*os.File, error) {
+	if _, err := root.Lstat(path); !errors.Is(err, os.ErrNotExist) {
+		if err == nil {
+			return nil, os.ErrExist
+		}
+		return nil, err
+	}
+	return root.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+}
+
 func Download(device *os.Root, source, hostDir string, progress func(int64, int64), otherDevices ...uint64) error {
 	src, info, err := openRegular(device.OpenFile, source)
 	if err != nil {
@@ -71,23 +81,30 @@ func Upload(device *os.Root, source, deviceDir string, progress func(int64, int6
 	}
 	defer src.Close()
 	name := filepath.Join(deviceDir, filepath.Base(source))
-	dest, err := device.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+	dest, err := openNewFile(device, name)
 	if err != nil {
 		return &StageError{"Cannot create file on external device", err}
 	}
 	count, err := writeCopy(dest, src, info.Size(), progress)
-	if err == nil {
-		// Some MTP drivers publish on release and cannot return a release error to close(2).
-		for range 10 {
-			saved, statErr := device.Stat(name)
-			if statErr == nil && saved.Size() == count {
-				return nil
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		err = errors.New("device did not confirm the expected file size")
+	if err := confirmFile(device, name, count, err); err != nil {
+		return fmt.Errorf("upload incomplete or unverified, a new file may remain on the device: %w", err)
 	}
-	return fmt.Errorf("upload incomplete or unverified, a new file may remain on the device: %w", err)
+	return nil
+}
+
+func confirmFile(root *os.Root, name string, size int64, err error) error {
+	if err != nil {
+		return err
+	}
+	// Some MTP drivers publish on release and cannot report a release error to close(2).
+	for range 10 {
+		info, err := root.Lstat(name)
+		if err == nil && info.Mode().IsRegular() && info.Size() == size {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return errors.New("destination did not confirm the expected file size")
 }
 
 type trackedWriter struct {
