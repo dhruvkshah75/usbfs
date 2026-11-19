@@ -23,7 +23,6 @@ if [[ $OSTYPE != linux* || $EUID == 0 ]]; then
     exit 1
 fi
 
-cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 go_bin=$(command -v go || true)
 if [[ -z $go_bin && -x /usr/lib/go-1.25/bin/go ]]; then
     go_bin=/usr/lib/go-1.25/bin/go
@@ -57,7 +56,16 @@ bin_dir=$HOME/.local/bin
 mkdir -p -- "$bin_dir"
 build_dir=$(mktemp -d -- "$bin_dir/.usbfs-build.XXXXXXXX")
 trap 'rm -rf -- "$build_dir"' EXIT
-"$go_bin" build -mod=readonly -o "$build_dir/usbfs" ./cmd/usbfs
+if [[ -n ${BASH_SOURCE[0]-} ]]; then
+    cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
+fi
+if [[ -z ${BASH_SOURCE[0]-} || ! -f cmd/usbfs/main.go || ! -f go.mod ]]; then
+    curl -fsSL https://codeload.github.com/dhruvkshah75/usbfs/tar.gz/refs/heads/main -o "$build_dir/source.tar.gz"
+    mkdir -- "$build_dir/source"
+    tar -xzf "$build_dir/source.tar.gz" -C "$build_dir/source" --strip-components=1
+    cd -- "$build_dir/source"
+fi
+"$go_bin" build -buildvcs=false -mod=readonly -o "$build_dir/usbfs" ./cmd/usbfs
 mv -fT -- "$build_dir/usbfs" "$bin_dir/usbfs"
 
 printf 'Installed usbfs to %s\n' "$bin_dir/usbfs"

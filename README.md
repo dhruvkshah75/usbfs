@@ -10,19 +10,15 @@
 
 ### Quick install on Ubuntu 24.04
 
-Run these commands as your regular user. The installer uses `sudo` for Ubuntu packages, builds `usbfs`, and installs it to `~/.local/bin/usbfs`.
+Run this command as your regular user. It requires `curl` (`sudo apt install curl` if needed). The installer downloads the source from GitHub, uses `sudo` for Ubuntu packages, and builds `usbfs` into `~/.local/bin`.
 
 ```bash
-sudo apt install git # Skip if Git is installed
-git clone https://github.com/dhruvkshah75/usbfs.git
-cd usbfs
-./install.sh
-~/.local/bin/usbfs
+(installer=$(curl -fsSL https://raw.githubusercontent.com/dhruvkshah75/usbfs/main/install.sh) && bash -c "$installer")
 ```
 
 The installer installs FUSE tools and both Android and iPhone/iPad drivers. If Go is missing, it installs Ubuntu's `golang-1.25-go` package from Universe. If `apt` cannot find a package, enable Universe with `sudo add-apt-repository universe` and rerun the installer. See the [Ubuntu Go package](https://packages.ubuntu.com/noble-updates/golang-1.25-go).
 
-If the prerequisites are already installed, including on other Linux distributions, run `./install.sh --skip-system-deps`. To update, run `git pull --ff-only` in the checkout and rerun the installer. To uninstall, exit `usbfs` normally and remove `~/.local/bin/usbfs`.
+Launch with `~/.local/bin/usbfs`. To skip package installation, including on other Linux distributions, change the last part of the install command to `bash -c "$installer" -- --skip-system-deps`. To update, rerun the install command. To uninstall, exit `usbfs` normally and remove `~/.local/bin/usbfs`.
 
 ### Requirements
 
