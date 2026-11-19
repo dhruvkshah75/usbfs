@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAndroidDriverReportsClaimConflict(t *testing.T) {
@@ -17,10 +18,10 @@ func TestAndroidDriverReportsClaimConflict(t *testing.T) {
 	if err := os.WriteFile(driver, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	s := &Session{path: dir, inspect: func(string) ([]string, error) { return nil, nil }}
-	err := s.start(Device{Kind: "Android MTP", driver: driver})
-	if !errors.Is(err, ErrMTPBusy) || s.driver != nil || s.HasMount() {
-		t.Fatalf("claim conflict = %v, driver = %v, mounted = %v", err, s.driver, s.HasMount())
+	s := &Session{path: dir, inspect: func(string) ([]mountEntry, error) { return nil, nil }}
+	err := s.start(Device{Kind: "Android MTP", driver: driver}, dir)
+	if !errors.Is(err, ErrMTPBusy) || len(s.drivers) != 0 || s.HasMount() {
+		t.Fatalf("claim conflict = %v, driver = %v, mounted = %v", err, s.drivers, s.HasMount())
 	}
 }
 
@@ -39,12 +40,14 @@ func TestProcMountsMatchesExactEscapedPath(t *testing.T) {
 ifuse /home/user/one\040two\134three/child fuse.usbfs rw 0 0
 ifuse /home/user/one\040two\134three fuse.ifuse rw 0 0
 `
-	types, err := readMountTypes(strings.NewReader(listing), `/home/user/one two\three`)
-	if err != nil || !reflect.DeepEqual(types, []string{"fuse.usbfs", "fuse.ifuse"}) {
-		t.Fatalf("mount types = %v, %v", types, err)
+	root := `/home/user/one two\three`
+	mounts, err := parseMounts(strings.NewReader(listing), root)
+	want := []mountEntry{{root, "fuse.usbfs"}, {root + "/child", "fuse.usbfs"}, {root, "fuse.ifuse"}}
+	if err != nil || !reflect.DeepEqual(mounts, want) {
+		t.Fatalf("mounts = %v, %v", mounts, err)
 	}
 	for _, invalid := range []string{"", "garbled"} {
-		if _, err := readMountTypes(strings.NewReader(invalid), "/mount"); err == nil {
+		if _, err := parseMounts(strings.NewReader(invalid), "/mount"); err == nil {
 			t.Fatalf("accepted invalid mount table %q as proof of unmount", invalid)
 		}
 	}
@@ -78,13 +81,13 @@ touch "$USBFS_TEST_DIR/detached"
 	started, release, waiting := make(chan struct{}), make(chan struct{}), make(chan struct{}, 1)
 	s := &Session{
 		path: filepath.Join(dir, "mount"), lock: lock,
-		inspect: func(string) ([]string, error) {
+		inspect: func(string) ([]mountEntry, error) {
 			_, err := os.Stat(filepath.Join(dir, "detached"))
 			switch {
 			case err == nil:
 				return nil, nil
 			case os.IsNotExist(err):
-				return []string{"fuse.usbfs"}, nil
+				return []mountEntry{{filepath.Join(dir, "mount"), "fuse.usbfs"}}, nil
 			default:
 				return nil, err
 			}
@@ -139,5 +142,139 @@ func TestParseMTP(t *testing.T) {
 	}
 	if _, _, ok := parseMTP("No raw devices found."); ok {
 		t.Fatal("reported a device from an empty listing")
+	}
+}
+
+func TestAppleMountsAndCleansEveryShare(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "mount")
+	stale := filepath.Join(root, "Stale")
+	state := filepath.Join(dir, "state")
+	for _, path := range []string{stale, state} {
+		if err := os.MkdirAll(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write := func(path, contents string, mode os.FileMode) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(contents), mode); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(state, "Stale"), "", 0600)
+	t.Setenv("USBFS_TEST_DIR", dir)
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	write(filepath.Join(dir, "idevice_id"), "#!/bin/sh\nprintf 'ipad-test\\n'\n", 0700)
+	write(filepath.Join(dir, "ifuse"), `#!/bin/sh
+if [ "$1" = "--list-apps" ]; then
+  printf '%s\n' 'com.goodnotesapp.x, "1", "Goodnotes 6"' 'com.example.browser, "1", "Brave"' 'com.example.fail, "1", "Broken"'
+  exit 0
+fi
+bundle=Media
+while [ "$#" -gt 1 ]; do
+  if [ "$1" = "--documents" ]; then
+    shift
+    bundle="$1"
+  fi
+  shift
+done
+name="${1##*/}"
+printf 'mount %s %s\n' "$name" "$bundle" >> "$USBFS_TEST_DIR/calls"
+if [ "$bundle" = "com.example.fail" ]; then
+  exit 1
+fi
+marker="$USBFS_TEST_DIR/state/$name"
+touch "$marker"
+while [ -f "$marker" ]; do sleep .02; done
+`, 0700)
+	write(filepath.Join(dir, "fusermount3"), `#!/bin/sh
+name="${2##*/}"
+printf 'unmount %s\n' "$name" >> "$USBFS_TEST_DIR/calls"
+if [ "$name" = "Goodnotes" ] && [ ! -f "$USBFS_TEST_DIR/release" ]; then
+  exit 1
+fi
+rm -f "$USBFS_TEST_DIR/state/$name"
+`, 0700)
+	write(filepath.Join(dir, "fusermount"), "#!/bin/sh\nexit 1\n", 0700)
+	lock, err := os.Create(filepath.Join(dir, "lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Session{
+		path: root, lock: lock,
+		inspect: func(prefix string) ([]mountEntry, error) {
+			markers, err := os.ReadDir(state)
+			if err != nil {
+				return nil, err
+			}
+			var mounted []mountEntry
+			for _, marker := range markers {
+				path := filepath.Join(root, marker.Name())
+				if path == prefix || strings.HasPrefix(path, prefix+"/") {
+					mounted = append(mounted, mountEntry{path, "fuse.usbfs"})
+				}
+			}
+			return mounted, nil
+		},
+	}
+	t.Cleanup(func() {
+		markers, _ := os.ReadDir(state)
+		for _, marker := range markers {
+			_ = os.Remove(filepath.Join(state, marker.Name()))
+		}
+		for _, driver := range s.drivers {
+			driver.wait()
+		}
+		lock.Close()
+	})
+
+	d, err := s.DetectAndMount(Apple)
+	if d.Kind == "" || err == nil || !strings.Contains(err.Error(), "skipped Broken") {
+		t.Fatalf("partial mount = %+v, %v", d, err)
+	}
+	shares, err := s.Shares()
+	if err != nil || !reflect.DeepEqual(shares, []string{"Goodnotes", "Brave", "Media"}) {
+		t.Fatalf("shares = %v, %v", shares, err)
+	}
+	if _, _, err := s.OpenPath("."); err == nil {
+		t.Fatal("synthetic root allowed filesystem writes or reads")
+	}
+	if _, _, err := s.OpenPath("../escape"); err == nil {
+		t.Fatal("accepted a path outside the iPad shares")
+	}
+	share, relative, err := s.OpenPath("Goodnotes/subfolder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if share.Name() != filepath.Join(root, "Goodnotes") || relative != "subfolder" {
+		t.Errorf("unexpected scoped path %q / %q", share.Name(), relative)
+	}
+	share.Close()
+
+	log := &warningLog{waiting: make(chan struct{}, 1)}
+	finished := make(chan bool, 1)
+	go func() { finished <- s.Close(log) }()
+	select {
+	case <-log.waiting:
+	case <-time.After(5 * time.Second):
+		t.Error("shutdown did not report the busy Goodnotes mount")
+	}
+	select {
+	case <-finished:
+		t.Fatal("shutdown returned while Goodnotes was still mounted")
+	default:
+	}
+	write(filepath.Join(dir, "release"), "", 0600)
+	if !<-finished || s.HasMount() {
+		t.Fatal("shutdown did not verify all shares were unmounted")
+	}
+	contents, err := os.ReadDir(root)
+	if err != nil || len(contents) != 0 {
+		t.Fatalf("left local mount directories: %v, %v", contents, err)
+	}
+	calls, err := os.ReadFile(filepath.Join(dir, "calls"))
+	want := "unmount Stale\nmount Goodnotes com.goodnotesapp.x\nmount Media Media\nmount Brave com.example.browser\nmount Broken com.example.fail\n"
+	if err != nil || !strings.HasPrefix(string(calls), want) {
+		t.Fatalf("mount sequence = %q, %v", calls, err)
 	}
 }

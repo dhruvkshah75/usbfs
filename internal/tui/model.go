@@ -126,6 +126,7 @@ type scanResult struct {
 	external     []fsops.Entry
 	local        []fsops.Entry
 	err, hostErr error
+	warning      error
 }
 
 type listResult struct {
@@ -142,6 +143,28 @@ func list(root *os.Root, index int, path string) listResult {
 	return listResult{index, path, entries, err}
 }
 
+func listExternal(session *device.Session, path string) listResult {
+	result := listResult{index: 0, path: path}
+	if path == "." {
+		shares, err := session.Shares()
+		if err != nil || shares != nil {
+			result.err = err
+			for _, name := range shares {
+				result.entries = append(result.entries, fsops.Entry{Name: name, Folder: true})
+			}
+			return result
+		}
+	}
+	root, relative, err := session.OpenPath(path)
+	if err != nil {
+		result.err = err
+		return result
+	}
+	defer root.Close()
+	result.entries, result.err = fsops.List(root, relative)
+	return result
+}
+
 func (m *Model) work(fn func() tea.Msg) tea.Cmd {
 	session := m.session
 	return func() tea.Msg {
@@ -156,17 +179,14 @@ func (m *Model) scan() tea.Cmd {
 	session, cwd, platform := m.session, m.panes[1].path, m.platform
 	return m.work(func() tea.Msg {
 		d, err := session.DetectAndMount(platform)
-		result := scanResult{device: d, err: err}
-		if err != nil || d.Kind == "" {
-			return result
-		}
-		root, err := session.OpenRoot()
-		if err != nil {
+		result := scanResult{device: d}
+		if d.Kind == "" {
 			result.err = err
 			return result
 		}
-		defer root.Close()
-		result.external, result.err = fsops.List(root, ".")
+		result.warning = err
+		external := listExternal(session, ".")
+		result.external, result.err = external.entries, external.err
 		if result.err == nil {
 			result.local, result.hostErr = fsops.List(nil, cwd)
 		}
@@ -181,12 +201,7 @@ func (m *Model) navigate(index int, path string) tea.Cmd {
 		if index == 1 {
 			return list(nil, index, path)
 		}
-		root, err := session.OpenRoot()
-		if err != nil {
-			return listResult{index: index, path: path, err: err}
-		}
-		defer root.Close()
-		return list(root, index, path)
+		return listExternal(session, path)
 	})
 }
 
@@ -194,15 +209,7 @@ func (m *Model) refresh() tea.Cmd {
 	m.busy = true
 	session, external, host := m.session, m.panes[0].path, m.panes[1].path
 	return m.work(func() tea.Msg {
-		result := refreshResult{{index: 0, path: external}, list(nil, 1, host)}
-		root, err := session.OpenRoot()
-		if err != nil {
-			result[0].err = err
-			return result
-		}
-		defer root.Close()
-		result[0] = list(root, 0, external)
-		return result
+		return refreshResult{listExternal(session, external), list(nil, 1, host)}
 	})
 }
 
@@ -222,7 +229,11 @@ func (m *Model) startCopy(entry fsops.Entry) tea.Cmd {
 	session := m.session
 	run := m.work(func() tea.Msg {
 		result := copyResult{download: from == 0, name: copy.name}
-		root, err := session.OpenRoot()
+		devicePath := target
+		if result.download {
+			devicePath = source
+		}
+		root, relative, err := session.OpenPath(devicePath)
 		if err != nil {
 			result.err = err
 			return result
@@ -233,11 +244,16 @@ func (m *Model) startCopy(entry fsops.Entry) tea.Cmd {
 			copy.count.Store(count)
 		}
 		if result.download {
-			result.err = fsops.Download(root, source, target, report)
+			ids, err := session.FilesystemIDs()
+			if err != nil {
+				result.err = err
+				return result
+			}
+			result.err = fsops.Download(root, relative, target, report, ids...)
 			result.target = list(nil, to, target)
 		} else {
-			result.err = fsops.Upload(root, source, target, report)
-			result.target = list(root, to, target)
+			result.err = fsops.Upload(root, source, relative, report)
+			result.target = listExternal(session, target)
 		}
 		return result
 	})

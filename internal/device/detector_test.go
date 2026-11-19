@@ -46,3 +46,23 @@ func TestNoJMTPDevices(t *testing.T) {
 		t.Fatal("jmtpfs header was mistaken for a device")
 	}
 }
+
+func TestAppleShareCSV(t *testing.T) {
+	listing := `"CFBundleIdentifier","CFBundleVersion","CFBundleDisplayName"
+com.goodnotesapp.x, "1", "Goodnotes 6"
+com.goodnotesapp.x, "2", "Duplicate"
+com.example.brave, "1", "Brave, Browser"
+"com.example.chrome","2","../Chrome"
+"com.example.media","1","Media"
+"com.example.second","1","media"
+--documents, "2", "Invalid"
+`
+	want := []appleShare{
+		{"Goodnotes", goodnotesID}, {"Media", ""},
+		{"Brave, Browser", "com.example.brave"}, {"_Chrome", "com.example.chrome"},
+		{"Media (2)", "com.example.media"}, {"media (3)", "com.example.second"},
+	}
+	if got := parseAppleShares(listing); !reflect.DeepEqual(got, want) {
+		t.Fatalf("shares = %+v, want %+v", got, want)
+	}
+}

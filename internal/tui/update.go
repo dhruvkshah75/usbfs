@@ -33,7 +33,7 @@ func (m *Model) openFile(index int, path, name string) tea.Cmd {
 		var root *os.Root
 		if result.external {
 			var err error
-			root, err = session.OpenRoot()
+			root, path, err = session.OpenPath(path)
 			if err != nil {
 				result.err = err
 				return result
@@ -129,6 +129,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.panes[0].replace(".", msg.external)
 			m.message("Device ready.", false)
 			m.applyList(listResult{1, m.panes[1].path, msg.local, msg.hostErr})
+			if msg.warning != nil {
+				m.message(msg.warning.Error(), true)
+			}
 		default:
 			m.message("", false)
 		}

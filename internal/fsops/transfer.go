@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"syscall"
 	"time"
 )
@@ -19,7 +20,7 @@ type StageError struct {
 func (e *StageError) Error() string { return e.Stage + ": " + e.Err.Error() }
 func (e *StageError) Unwrap() error { return e.Err }
 
-func Download(device *os.Root, source, hostDir string, progress func(int64, int64)) error {
+func Download(device *os.Root, source, hostDir string, progress func(int64, int64), otherDevices ...uint64) error {
 	src, info, err := openRegular(device.OpenFile, source)
 	if err != nil {
 		return &StageError{"Cannot read file from external device", err}
@@ -38,7 +39,8 @@ func Download(device *os.Root, source, hostDir string, progress func(int64, int6
 	if err != nil {
 		return err
 	}
-	if mount.Sys().(*syscall.Stat_t).Dev == targetDir.Sys().(*syscall.Stat_t).Dev {
+	destination := targetDir.Sys().(*syscall.Stat_t).Dev
+	if mount.Sys().(*syscall.Stat_t).Dev == destination || slices.Contains(otherDevices, destination) {
 		return errors.New("choose a Linux destination outside the external device")
 	}
 

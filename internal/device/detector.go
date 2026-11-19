@@ -2,13 +2,68 @@ package device
 
 import (
 	"context"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
+
+const goodnotesID = "com.goodnotesapp.x"
+
+type appleShare struct {
+	name, bundle string
+}
+
+func appleShares(d Device) ([]appleShare, error) {
+	output, err := commandWithTimeout(10*time.Second, d.driver, append([]string{"--list-apps"}, d.args...)...)
+	return parseAppleShares(output), err
+}
+
+func parseAppleShares(output string) []appleShare {
+	shares := []appleShare{{"Goodnotes", goodnotesID}, {"Media", ""}}
+	bundles := map[string]bool{goodnotesID: true}
+	names := map[string]bool{"goodnotes": true, "media": true}
+	for _, line := range strings.Split(output, "\n") {
+		reader := csv.NewReader(strings.NewReader(strings.TrimSpace(line)))
+		reader.TrimLeadingSpace = true
+		row, err := reader.Read()
+		if err != nil || len(row) != 3 {
+			continue
+		}
+		bundle := strings.TrimSpace(row[0])
+		if bundles[strings.ToLower(bundle)] || !strings.Contains(bundle, ".") ||
+			strings.HasPrefix(bundle, "-") || strings.ContainsFunc(bundle, func(r rune) bool {
+			return !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-_", r)
+		}) {
+			continue
+		}
+		var name strings.Builder
+		for _, r := range row[2] {
+			if name.Len() >= 180 {
+				break
+			}
+			if r == '/' || r == '\\' || !unicode.IsPrint(r) {
+				r = '_'
+			}
+			name.WriteRune(r)
+		}
+		base := strings.TrimFunc(name.String(), func(r rune) bool { return r == '.' || unicode.IsSpace(r) })
+		if base == "" {
+			base = "App"
+		}
+		folder := base
+		for suffix := 2; names[strings.ToLower(folder)]; suffix++ {
+			folder = fmt.Sprintf("%s (%d)", base, suffix)
+		}
+		bundles[strings.ToLower(bundle)], names[strings.ToLower(folder)] = true, true
+		shares = append(shares, appleShare{folder, bundle})
+	}
+	return shares
+}
 
 type Device struct {
 	Kind, Name string
@@ -72,7 +127,11 @@ func mountDriver(platform Platform) (string, error) {
 }
 
 func command(name string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	return commandWithTimeout(3*time.Second, name, args...)
+}
+
+func commandWithTimeout(timeout time.Duration, name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	var diagnostics strings.Builder

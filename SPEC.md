@@ -37,11 +37,11 @@ When the user launches the executable from any terminal:
      * Display a clear status screen stating *"No external mobile/tablet device detected. Ensure the USB cable is connected, the device is unlocked, and 'Trust' / 'File Transfer (MTP)' is enabled."*
    * **Case B — Device Detected:** Identify the device type (`iOS/iPadOS` or `Android MTP`) and retrieve its friendly device name if available.
 3. **Automatic Mounting:**
-   * Create a dedicated temporary mount directory at `~/.cache/usb-tui-mount` (creating parent directories if needed).
-   * Before mounting, run a silent cleanup unmount (`fusermount3 -u ~/.cache/usb-tui-mount`) in case a previous session left a stale mount point.
+   * Create a dedicated mount directory at `~/.cache/usbfs-mount` (creating parent directories if needed).
+   * Before mounting, discover and clear stale usbfs mounts at the root and below it, working from children to parents.
    * Execute the appropriate mount command:
-     * iOS/iPadOS: `ifuse ~/.cache/usb-tui-mount`
-     * Android MTP: `simple-mtpfs --device <id> ~/.cache/usb-tui-mount`
+     * iOS/iPadOS: mount Goodnotes with `ifuse --documents com.goodnotesapp.x ~/.cache/usbfs-mount/Goodnotes` and the media partition with `ifuse ~/.cache/usbfs-mount/Media`. Discover additional file-sharing apps with `ifuse --list-apps` and mount each app's shared Documents folder under its sanitized display name. Skip unavailable shares and show a warning.
+     * Android MTP: `simple-mtpfs --device <id> ~/.cache/usbfs-mount`
    * Verify the mount succeeded and the directory is readable before rendering the file panes.
 
 ---
@@ -49,9 +49,9 @@ When the user launches the executable from any terminal:
 ### 3.2 Dual-Pane TUI Interface & Navigation
 Once mounted, render a responsive side-by-side dual-pane TUI:
 * **Top Header Bar:** Displays connected device type/name, mount path status (`MOUNTED`), and active read-safety badge (`DEVICE DELETE PROTECTED`).
-* **Left Pane (External Device):** Displays directories and files inside `~/.cache/usb-tui-mount`.
+* **Left Pane (External Device):** Displays directories and files inside `~/.cache/usbfs-mount`. On iOS/iPadOS, the root lists mounted shares with Goodnotes selected first when available. To upload, enter a mounted share first.
   * Show clear visual indicators for folders (`[DIR]`), readable files, and restricted/unreadable items (`[LOCKED]`).
-  * Prevent directory traversal above `~/.cache/usb-tui-mount` (sandbox root enforcement).
+  * Prevent directory traversal above `~/.cache/usbfs-mount` (sandbox root enforcement).
 * **Right Pane (Linux Local Host):** Defaults to the user's current working directory (or `~/Downloads`), allowing full standard directory navigation on the local machine.
 * **Bottom Status / Keybinding Bar:** Displays live feedback (copy progress, permission warnings, open status) and keybinding hints.
 
@@ -91,12 +91,12 @@ To prevent filesystem corruption on either device:
 2. **Verified Unmount Sequence:**
    * Upon confirming `y`:
      1. Exit Bubble Tea's alternate screen buffer and restore normal terminal mode.
-     2. Execute `fusermount3 -u ~/.cache/usb-tui-mount` (falling back to `fusermount -u`).
-     3. Verify the unmount succeeded (check exit code and confirm mount point is no longer active via `mountpoint -q` or `/proc/mounts`).
-     4. If the device is temporarily busy, retry up to 3 times with a 500ms delay.
+     2. Execute `fusermount3 -u` for every active mount path, falling back to `fusermount -u`.
+     3. Verify through `/proc/mounts` that all mounts at or under `~/.cache/usbfs-mount` are gone, then remove empty local share directories.
+     4. If any mount is busy, stay running and retry with backoff until unmount is verified.
      5. Print an explicit confirmation message to `stdout` before exiting:
         * On success: `[OK] External device cleanly unmounted. It is now safe to unplug the USB cable.`
-        * On failure: `[WARNING] Device is still busy (close any files opened from the device first), then run: fusermount3 -u ~/.cache/usb-tui-mount`
+        * While busy: ask the user to close files opened from the device and report that unmount will be retried.
 3. **Signal Handling (`SIGINT` / `SIGTERM`):**
    * Trap OS interrupt signals so unexpected terminal closes still attempt a clean `fusermount3 -u` via `defer` cleanup before terminating.
 
