@@ -41,7 +41,7 @@ func TestDetailsShortcutReadsSelectedSearchResult(t *testing.T) {
 	}
 	m.Update(cmd())
 	view := ansi.Strip(m.View())
-	for _, want := range []string{"Details", name, "Linux host", "docs/" + name, "Type: File", "3 bytes", "2025-04-02 03:04:05"} {
+	for _, want := range []string{"Details", name, "Linux host", "docs/" + name, "Type: File", "3 B", "2025-04-02 03:04:05"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("details missing %q:\n%s", want, view)
 		}
@@ -100,7 +100,7 @@ func TestFolderDetailsCountsNestedContentsWithoutFollowingLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := readDetails(&device.Session{}, device.Android, 1, path)
-	if result.err != nil || result.folderSize != "8 bytes (contents)" {
+	if result.err != nil || result.folderSize != "8 B (contents)" {
 		t.Fatalf("folder size = %q, error = %v", result.folderSize, result.err)
 	}
 	root, err := os.OpenRoot(base)
@@ -108,10 +108,26 @@ func TestFolderDetailsCountsNestedContentsWithoutFollowingLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer root.Close()
-	if got := folderDetailsSize(root, "StudyFiles", result.info); got != "8 bytes (contents)" {
+	if got := folderDetailsSize(root, "StudyFiles", result.info); got != "8 B (contents)" {
 		t.Fatalf("root-relative folder size = %q", got)
 	}
-	if !strings.Contains(strings.Join(result.lines(), "\n"), "Size: 8 bytes (contents)") {
+	if !strings.Contains(strings.Join(result.lines(), "\n"), "Size: 8 B (contents)") {
 		t.Fatal("folder size missing from rendered details")
+	}
+}
+
+func TestFormatSizeUsesHighestWholeUnit(t *testing.T) {
+	for _, tc := range []struct {
+		bytes int64
+		want  string
+	}{
+		{0, "0 B"}, {999, "999 B"}, {1_000, "1 KB"},
+		{999_999, "999 KB"}, {1_000_000, "1 MB"},
+		{100_000_000, "100 MB"}, {999_999_999, "999 MB"},
+		{1_000_000_000, "1 GB"}, {2_400_000_000, "2 GB"},
+	} {
+		if got := formatSize(tc.bytes); got != tc.want {
+			t.Errorf("size for %d = %q, want %q", tc.bytes, got, tc.want)
+		}
 	}
 }

@@ -89,9 +89,22 @@ func folderDetailsSize(root *os.Root, path string, top os.FileInfo) string {
 		return nil
 	})
 	if partial || err != nil {
-		return fmt.Sprintf("%d bytes (partial)", bytes)
+		return formatSize(bytes) + " (partial)"
 	}
-	return fmt.Sprintf("%d bytes (contents)", bytes)
+	return formatSize(bytes) + " (contents)"
+}
+
+func formatSize(bytes int64) string {
+	switch {
+	case bytes >= 1_000_000_000:
+		return fmt.Sprintf("%d GB", bytes/1_000_000_000)
+	case bytes >= 1_000_000:
+		return fmt.Sprintf("%d MB", bytes/1_000_000)
+	case bytes >= 1_000:
+		return fmt.Sprintf("%d KB", bytes/1_000)
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
 }
 
 func (m *Model) inspectItem(index int, path string) tea.Cmd {
@@ -104,7 +117,7 @@ func (d detailsResult) lines() []string {
 	name, size, kind, modified := filepath.Base(d.path), "Unavailable", "Special entry", "Unavailable"
 	switch {
 	case d.info.Mode().IsRegular():
-		kind, size = "File", fmt.Sprintf("%d bytes", d.info.Size())
+		kind, size = "File", formatSize(d.info.Size())
 	case d.info.IsDir():
 		kind = "Folder"
 		if d.folderSize != "" {
