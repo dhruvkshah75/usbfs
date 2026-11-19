@@ -70,8 +70,8 @@ func TestLinuxTypeToFilter(t *testing.T) {
 		t.Fatalf("unexpected filtered pane:\n%s", view)
 	}
 	m.Update(runes("界"))
-	if len(pane.visible()) != 0 || !strings.Contains(ansi.Strip(m.View()), "No matches") {
-		t.Fatal("unmatched input should show an empty result list")
+	if len(pane.visible()) != 0 || !strings.Contains(ansi.Strip(m.View()), "Searching subfolders") {
+		t.Fatal("unmatched local input should indicate that subfolders are still being searched")
 	}
 	m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
 	if pane.query != "USB FS" || len(pane.visible()) != 2 {

@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -26,36 +28,67 @@ type searchResult struct {
 	err        error
 }
 
-func (r *searchResult) searchTree(ctx context.Context, tree fs.FS, prefix, excluded, needle string) error {
-	return fs.WalkDir(tree, ".", func(path string, item fs.DirEntry, err error) error {
-		if ctx.Err() != nil {
-			return ctx.Err()
+type searchRoot struct {
+	tree   fs.FS
+	prefix string
+}
+
+type searchDirectory struct {
+	root searchRoot
+	path string
+}
+
+func (r *searchResult) searchTrees(ctx context.Context, roots []searchRoot, excluded, needle string) error {
+	queue := make([]searchDirectory, 0, len(roots))
+	for _, root := range roots {
+		queue = append(queue, searchDirectory{root, "."})
+	}
+	for len(queue) > 0 {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
-		if path == excluded {
-			return fs.SkipDir
-		}
+		dir := queue[0]
+		queue[0] = searchDirectory{}
+		queue = queue[1:]
+		children, err := fs.ReadDir(dir.root.tree, dir.path)
 		if err != nil {
-			if path == "." {
+			if dir.path == "." && dir.root.prefix == "" {
 				return err
 			}
 			r.unreadable++
-			return nil
 		}
-		if path == "." || (prefix == "" && filepath.Dir(path) == ".") || (!item.IsDir() && !item.Type().IsRegular()) ||
-			!strings.Contains(filterText(item.Name()), needle) {
-			return nil
+		for _, child := range children {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			path := filepath.Join(dir.path, child.Name())
+			relative := filepath.Join(dir.root.prefix, path)
+			if relative == excluded || (!child.IsDir() && !child.Type().IsRegular()) {
+				continue
+			}
+			if child.IsDir() {
+				queue = append(queue, searchDirectory{dir.root, path})
+			}
+			// The pane already shows matches directly under its current directory.
+			if filepath.Dir(relative) == "." || !strings.Contains(filterText(child.Name()), needle) {
+				continue
+			}
+			if len(r.entries) == searchLimit {
+				r.limited = true
+				return nil
+			}
+			entry := fsops.Entry{Name: relative, Folder: child.IsDir()}
+			r.entries = append(r.entries, entry)
+			if r.job != nil {
+				r.job.publish(entry)
+			}
 		}
-		if len(r.entries) == searchLimit {
-			r.limited = true
-			return fs.SkipAll
-		}
-		r.entries = append(r.entries, fsops.Entry{Name: filepath.Join(prefix, path), Folder: item.IsDir()})
-		return nil
-	})
+	}
+	return nil
 }
 
-func searchPane(ctx context.Context, session *device.Session, index int, path, query string) searchResult {
-	result := searchResult{index: index}
+func searchPane(ctx context.Context, session *device.Session, index int, path, query string, job *searchJob) searchResult {
+	result := searchResult{index: index, job: job}
 	if ctx.Err() != nil {
 		result.err = ctx.Err()
 		return result
@@ -68,20 +101,26 @@ func searchPane(ctx context.Context, session *device.Session, index int, path, q
 			return result
 		}
 		if shares != nil {
+			var roots []searchRoot
+			var opened []*os.Root
+			defer func() {
+				for _, root := range opened {
+					root.Close()
+				}
+			}()
 			for _, share := range shares {
-				if ctx.Err() != nil || result.limited {
+				if ctx.Err() != nil {
 					break
 				}
 				root, err := openFolder(session, 0, share)
-				if err == nil {
-					err = result.searchTree(ctx, root.FS(), share, "", needle)
-					root.Close()
-				}
 				if err != nil {
 					result.unreadable++
+					continue
 				}
+				opened = append(opened, root)
+				roots = append(roots, searchRoot{root.FS(), share})
 			}
-			result.err = ctx.Err()
+			result.err = result.searchTrees(ctx, roots, "", needle)
 			return result
 		}
 	}
@@ -100,12 +139,37 @@ func searchPane(ctx context.Context, session *device.Session, index int, path, q
 			}
 		}
 	}
-	result.err = result.searchTree(ctx, root.FS(), "", excluded, needle)
+	result.err = result.searchTrees(ctx, []searchRoot{{tree: root.FS()}}, excluded, needle)
 	return result
 }
 
 type searchJob struct {
-	cancel context.CancelFunc
+	cancel  context.CancelFunc
+	mu      sync.Mutex
+	pending []fsops.Entry
+}
+
+func (job *searchJob) publish(entry fsops.Entry) {
+	job.mu.Lock()
+	job.pending = append(job.pending, entry)
+	job.mu.Unlock()
+}
+
+func (job *searchJob) take() []fsops.Entry {
+	job.mu.Lock()
+	defer job.mu.Unlock()
+	entries := job.pending
+	job.pending = nil
+	return entries
+}
+
+func (p *pane) receiveSearchMatches() {
+	if p.search != nil {
+		if entries := p.search.take(); len(entries) > 0 {
+			p.results = append(p.results, entries...)
+			p.replace(p.path, p.entries)
+		}
+	}
 }
 
 func (p *pane) stopSearch() {
@@ -128,9 +192,7 @@ func (m *Model) searchQuery(index int, query string) tea.Cmd {
 	p.search = job
 	session, path := m.session, p.path
 	run := m.work(func() tea.Msg {
-		result := searchPane(ctx, session, index, path, query)
-		result.job = job
-		return result
+		return searchPane(ctx, session, index, path, query, job)
 	})
 	return func() tea.Msg {
 		delay := time.NewTimer(180 * time.Millisecond)

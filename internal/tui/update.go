@@ -131,6 +131,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.mouse(msg)
 	case spinner.TickMsg:
+		for i := range m.panes {
+			m.panes[i].receiveSearchMatches()
+		}
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd

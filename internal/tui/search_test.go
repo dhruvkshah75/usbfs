@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
@@ -27,7 +29,7 @@ func TestRecursiveSearchIncludesRelativePathsAndSkipsLinks(t *testing.T) {
 		"unmatched.txt":      {},
 	}
 	var result searchResult
-	if err := result.searchTree(context.Background(), tree, "Brave", "external", filterText(" Usb Fs ")); err != nil {
+	if err := result.searchTrees(context.Background(), []searchRoot{{tree, "Brave"}}, "Brave/external", filterText(" Usb Fs ")); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"Brave/first/USB FS.txt", "Brave/second/USBFS docs", "Brave/second/usbfs.txt"}
@@ -41,7 +43,7 @@ func TestRecursiveSearchIncludesRelativePathsAndSkipsLinks(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := result.searchTree(ctx, tree, "", "", "usbfs"); !errors.Is(err, context.Canceled) {
+	if err := result.searchTrees(ctx, []searchRoot{{tree: tree}}, "", "usbfs"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("cancelled walk returned %v", err)
 	}
 }
@@ -52,7 +54,7 @@ func TestRecursiveSearchLimit(t *testing.T) {
 		tree[fmt.Sprintf("nested/match%04d", i)] = &fstest.MapFile{}
 	}
 	var result searchResult
-	if err := result.searchTree(context.Background(), tree, "", "", "match"); err != nil {
+	if err := result.searchTrees(context.Background(), []searchRoot{{tree: tree}}, "", "match"); err != nil {
 		t.Fatal(err)
 	}
 	if len(result.entries) != searchLimit || !result.limited {
@@ -79,7 +81,7 @@ func TestSearchControlsInBothPanes(t *testing.T) {
 			// Simulate entries returned by a mounted share.
 			result = searchResult{index: index, job: m.panes[index].search}
 			tree := fstest.MapFS{"docs/USB FS": {Mode: os.ModeDir}}
-			if err := result.searchTree(context.Background(), tree, "Brave", "", "usbfs"); err != nil {
+			if err := result.searchTrees(context.Background(), []searchRoot{{tree, "Brave"}}, "", "usbfs"); err != nil {
 				t.Fatal(err)
 			}
 		} else {
@@ -138,5 +140,75 @@ func TestLiveSearchDiscardsSupersededAndClearedResults(t *testing.T) {
 	m.Update(current)
 	if p.search != nil || p.filtering || len(p.visible()) != 0 || m.confirm {
 		t.Fatal("cleared results resurfaced or Esc opened the exit confirmation")
+	}
+}
+
+type blockedSearchFS struct {
+	fstest.MapFS
+	block, resume chan struct{}
+}
+
+func (f blockedSearchFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	if name == "Archive/Slow" {
+		close(f.block)
+		<-f.resume
+	}
+	return f.MapFS.ReadDir(name)
+}
+
+func TestNearbyFoldersAppearBeforeDeepScanFinishes(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		index int
+	}{
+		{"Linux folder", 1},
+		{"iPad share picker", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			block, resume := make(chan struct{}), make(chan struct{})
+			defer close(resume)
+			slow := blockedSearchFS{fstest.MapFS{"Archive/Slow/unrelated.txt": {}}, block, resume}
+			roots := []searchRoot{{tree: fstest.MapFS{
+				"Documents/StudyFiles/notes.txt": {},
+			}}}
+			want := "Documents/StudyFiles"
+			if tc.index == 0 {
+				roots = []searchRoot{
+					{tree: slow, prefix: "Goodnotes"},
+					{tree: fstest.MapFS{"StudyFiles/notes.txt": {}}, prefix: "Brave"},
+				}
+				want = "Brave/StudyFiles"
+			} else {
+				slow.MapFS["Documents/StudyFiles/notes.txt"] = &fstest.MapFile{}
+				roots[0].tree = slow
+			}
+			m := New(&device.Session{}, t.TempDir())
+			m.ready, m.focus = true, tc.index
+			m.key(runes("study files"))
+			job := m.panes[tc.index].search
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan searchResult, 1)
+			go func() {
+				result := searchResult{index: tc.index, job: job}
+				result.err = result.searchTrees(ctx, roots, "", "studyfiles")
+				done <- result
+			}()
+			select {
+			case <-block:
+			case <-time.After(3 * time.Second):
+				t.Fatal("search did not reach the slow directory")
+			}
+			m.Update(m.spinner.Tick())
+			entries := m.panes[tc.index].visible()
+			if len(entries) != 1 || entries[0].Name != want || !entries[0].Folder {
+				t.Fatalf("expected %s before the scan finished, got %+v", want, entries)
+			}
+			select {
+			case <-done:
+				t.Fatal("scan finished while the directory was still blocked")
+			default:
+			}
+		})
 	}
 }

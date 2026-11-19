@@ -185,6 +185,9 @@ func (m *Model) pane(index, width, height int) string {
 	empty := "  Empty folder"
 	if p.filtering {
 		empty = "  No matches"
+		if p.search != nil {
+			empty = "  Searching subfolders…"
+		}
 	}
 	if height < 5 {
 		if p.filtering {
