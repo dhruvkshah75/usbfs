@@ -318,7 +318,7 @@ func (m *Model) footer() string {
 	case strings.HasPrefix(status, "✓"):
 		ink = coral
 	}
-	keys := " [F1] Help   [Esc] Exit"
+	keys := "[F1] Help   [Esc] Exit"
 	switch {
 	case m.ready:
 		if m.device.Owner == device.MountOwnerExternalGVfs {
@@ -342,11 +342,10 @@ func (m *Model) footer() string {
 	if m.statusHeight() > 1 {
 		rows = append(rows, line(foreground(ink, surface), m.width, " "+detail))
 	}
-	keybar := foreground(muted, surfaceElevated).Render(keys)
 	if action := m.mirrorAction(m.mirroring[m.device.USB]); action != "" {
-		keybar = foreground(coral, surfaceElevated).Bold(true).Render(" "+action) + "  " + keybar
+		keys = action + "   " + keys
 	}
-	return strings.Join(append(rows, styledLine(m.width, keybar, surfaceElevated)), "\n")
+	return strings.Join(append(rows, line(foreground(muted, surfaceElevated), m.width, " "+keys)), "\n")
 }
 
 func (m *Model) modal(screen string) string {
