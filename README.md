@@ -1,8 +1,8 @@
 # usbfs
 
-`usbfs` is a dual-pane terminal file manager for copying files between a Linux computer and a USB-connected Android phone, iPhone, or iPad. The external device is on the left and the Linux host is on the right. Browse and filter either pane, open files in Linux desktop applications, and copy files and folders with the keyboard or mouse.
+`usbfs` is a dual-pane terminal file manager for Linux and USB-connected Android phones, iPhones, and iPads. The external device is on the left and the Linux host is on the right. Browse and search both panes, copy files and folders in either direction, and control the connected device in a separate mirror window while its files stay mounted.
 
-[Install](#install) · [Connect a device](#connect-a-device) · [Controls](#controls) · [Copy and manage files](#copy-and-manage-files) · [Screen mirroring](#screen-mirroring) · [Safe exit](#safe-exit) · [Troubleshooting](#troubleshooting) · [Development](#development)
+[Install](#install) · [Connect a device](#connect-a-device) · [Controls](#controls) · [Copy and manage files](#copy-and-manage-files) · [Screen mirroring](#screen-mirroring) · [Safe exit](#safe-exit) · [Troubleshooting](#troubleshooting) · [Credits](#credits) · [Development](#development)
 
 ![usbfs showing an iPad's Brave file share on the left and Linux files on the right](docs/usbfs-screenshot.png)
 
@@ -16,7 +16,7 @@ Run this command as your regular user. It requires `curl` (`sudo apt install cur
 (installer=$(curl -fsSL https://raw.githubusercontent.com/dhruvkshah75/usbfs/main/install.sh) && bash -c "$installer")
 ```
 
-The installer installs FUSE tools and both Android and iPhone/iPad drivers. If Go is missing, it installs Ubuntu's `golang-1.25-go` package from Universe. If `apt` cannot find a package, enable Universe with `sudo add-apt-repository universe` and rerun the installer. See the [Ubuntu Go package](https://packages.ubuntu.com/noble-updates/golang-1.25-go).
+The installer installs FUSE tools and both Android and iPhone/iPad file-mount drivers. Install the optional mirror tools using the [screen mirroring instructions](#screen-mirroring). If Go is missing, the installer installs Ubuntu's `golang-1.25-go` package from Universe. If `apt` cannot find a package, enable Universe with `sudo add-apt-repository universe` and rerun the installer. [Ubuntu Go package](https://packages.ubuntu.com/noble-updates/golang-1.25-go)
 
 Launch with `~/.local/bin/usbfs`. To skip package installation, including on other Linux distributions, change the last part of the install command to `bash -c "$installer" -- --skip-system-deps`. To update, rerun the install command. To uninstall, exit `usbfs` normally and remove `~/.local/bin/usbfs`.
 
@@ -87,9 +87,8 @@ Add the `export PATH=...` line to your shell's startup file if that directory is
 1. Plug in the phone and unlock it.
 2. Open the phone's USB notification. Under **Use USB for**, choose **File transfer / Android Auto** or **File transfer**.
 3. In `usbfs`, press `a` to choose Android. When the mount is ready, open the storage listed in the external pane.
-4. If Ubuntu Files has already opened the phone, eject the phone's entry from the Files sidebar, leave the cable connected, and press `r` on the `usbfs` waiting screen.
 
-Android exposes storage through MTP, typically shared internal storage and any removable storage the phone exposes. Charging only, photo transfer (PTP), tethering, and MIDI are separate USB modes. The MTP helper stays alive for the duration of the mount, including while you are idle. `usbfs` browses the files Android exposes and copies them when you request a transfer. [Android USB file-transfer guide](https://support.google.com/android/answer/9064445) · [jmtpfs](https://github.com/JasonFerrara/jmtpfs) · [simple-mtpfs](https://github.com/phatina/simple-mtpfs)
+Android exposes shared internal storage and available removable storage through MTP. If GNOME Files already has a matching mount, `usbfs` reuses it and shows **MOUNTED (GVfs)**. Otherwise it mounts the phone with `simple-mtpfs` or `jmtpfs`. If a different app holds the MTP connection and `usbfs` reports it as busy, see [Android USB connection is busy](#android-usb-connection-is-busy). [Android USB file-transfer guide](https://support.google.com/android/answer/9064445)
 
 ### iPhone or iPad
 
@@ -113,7 +112,7 @@ The external pane displays a **local Linux mount path**. The phone's files are a
 
 | Path | Purpose |
 | --- | --- |
-| `~/.cache/usbfs-mount` | Android mounts directly here. For iPhone/iPad, this directory holds a separate FUSE mount for each Apple share. |
+| `~/.cache/usbfs-mount` | Android mounts owned by `usbfs` use this path. For iPhone/iPad, it holds a separate FUSE mount for each Apple share. Reused GNOME mounts keep their existing GVfs path. |
 | `~/.cache/usbfs-mount.lock` | Prevents two `usbfs` instances under the same home directory from competing for the mount. The lock is held for the session. The file can remain after the app exits. |
 
 Keep the mount directory reserved for `usbfs`. It is used as a filesystem mount point. Each Apple share needs an empty, user-owned local mount directory without write access for other users. Stale, recognized `usbfs` mounts are checked and cleaned up before a new mount attempt.
@@ -136,12 +135,14 @@ Keep the mount directory reserved for `usbfs`. It is used as a filesystem mount 
 | Create a directory or empty file | `Ctrl+N` directory, `Ctrl+F` empty file. Name it and press `Enter`, or press `Esc` to cancel. |
 | Delete a regular Linux file | `Delete`, then `y` to permanently delete or `n` / `Esc` to cancel |
 | Open or close the centered Help window | `F1`. `Esc` also closes it. Scroll with `↑` / `↓`, the mouse wheel, `PgUp` / `PgDn`, or `Home` / `End`. |
-| Toggle device screen mirroring | `Alt+m` or click **Mirror Screen / Stop Mirror** in the device header. |
+| Toggle device screen mirroring | `Alt+m` or click **Mirror Screen / Stop Mirror** in the bottom bar. |
 | Exit | `Esc` or `Alt+Q`. During a search, the first `Esc` clears it. If a device is mounted, confirm exit with `y` or cancel with `n` / `Esc`. Plain `q` also works on the setup screen. |
 
 The coral highlight shows the active selection. `[DIR]` marks folders and `[LOCKED]` marks entries the pane cannot open. Typing matches names in the focused pane case-insensitively and ignores whitespace. Current-folder matches appear first, and subfolder matches appear below them as the search finds them, starting with nearby folders. Each pane keeps its own query when you switch focus. Changing directories clears that pane's query. If the terminal is narrow, the app stacks the panes or displays just the focused one.
 
 From the iPhone/iPad share picker, searching covers all mounted shares. Nested results show relative paths so identical names can be distinguished. Use the usual controls to open or copy a result. The recursive walk skips symbolic links, reports unreadable locations, and shows up to 1,000 nested matches.
+
+When you open a device folder such as Downloads, the pane switches to the destination path and shows **Loading folder…** while it reads the directory. If the listing fails, the previous folder returns with an error message. On reused GVfs mounts, ordinary entries use metadata from the directory listing to avoid a separate USB lookup for each item.
 
 ## Copy and manage files
 
@@ -155,7 +156,7 @@ From the iPhone/iPad share picker, searching covers all mounted shares. Nested r
 
 Folder copying previews the destination and file count before starting. It copies regular files and empty folders, skips symbolic links and other special entries, and reports conflicts and failures. Choose a destination where the top-level folder name is free. If a copy fails partway through, items already copied remain in place. Both directions preserve existing items. New-item creation also rejects names that already exist. Rename, move, and external deletion are outside the in-app file operations.
 
-Downloads are written to a temporary file in the destination and published at the final name only after a complete copy. The Linux destination filesystem must support hard links for that final step. An interrupted or unverified upload may leave a new partial file on the device. Check it on the device before retrying, since `usbfs` will reject the occupied name. Large MTP transfers may also need temporary disk space on Linux, depending on the driver. [jmtpfs implementation notes](https://github.com/JasonFerrara/jmtpfs#readme)
+Downloads are written to a temporary file in the destination and published at the final name only after a complete copy. The Linux destination filesystem must support hard links for that final step. An interrupted or unverified upload may leave a new partial file on the device. Check it on the device before retrying, since `usbfs` will reject the occupied name. On reused GVfs mounts, uploads and downloads also use a private temporary directory on Linux and `gio copy` to communicate with the phone. Allow local disk space for that staging copy. Other MTP drivers may also use temporary disk space. [jmtpfs implementation notes](https://github.com/JasonFerrara/jmtpfs#readme)
 
 ## Screen mirroring
 
@@ -170,8 +171,8 @@ Enable **USB debugging** in Android's **Developer options**, unlock the phone,
 and accept the **Allow USB debugging** prompt. Once the phone is mounted in
 `usbfs`, press `Alt+m` or click **Mirror Screen**. See [Android's USB debugging instructions](https://developer.android.com/tools/adb#Enabling).
 
-Use the desktop mirror window to control the phone with the mouse and
-keyboard. Drag a non-APK file onto the window to push it to
+Use the desktop window titled `USBFS - <device model>` to control the phone
+with the mouse and keyboard. Drag a non-APK file onto the window to push it to
 `/sdcard/Download/`. Scrcpy handles these drops directly and can replace a
 same-named file. It handles APK drops as installation requests. The physical
 screen turns off while the mirror is open, and mounting and file browsing
@@ -180,27 +181,41 @@ to stop the mirror. [Scrcpy controls and drag-and-drop behavior](https://github.
 
 ### iPhone and iPad
 
-Screen mirroring requires iOS or iPadOS 27 or later. Unlock and trust the device, enable **Developer Mode** under **Settings → Privacy & Security**, and connect over USB. Once the device is mounted in `usbfs`, press `Alt+m` or click **Mirror Screen**. The existing file mounts stay available while the mirror runs.
+Screen mirroring requires iOS or iPadOS 27 or later. Unlock and trust the device, enable **Developer Mode** under **Settings → Privacy & Security**, and connect over USB. Once the device is mounted in `usbfs`, press `Alt+m` or click **Mirror Screen** in the bottom bar. The existing file mounts stay available while the mirror runs.
 
-- `USBFS_IPAD_MIRROR_BACKEND=auto` (default) prefers [DeviceHub](https://github.com/jkcoxson/devicehub_rs) when `devicehub_rs` and `ffmpeg` are on `PATH`. Use a current DeviceHub build that accepts a positional UDID and `--no-mcp`. Its native window syncs text between the device and desktop clipboards.
-- `USBFS_IPAD_MIRROR_BACKEND=web` uses [pymobiledevice3's interactive web viewer](https://doronz88.github.io/pymobiledevice3/latest/guides/screen-mirroring/). The web viewer is also the automatic fallback when the native dependencies are missing. It listens on a temporary loopback port and opens an app window in a compatible Chromium browser. The browser needs HEVC support. The viewer opens with only the interactive screen visible. Press `F2` in the mirror window to show or hide the controls. To share the clipboard, show the controls, turn on **Sync** in the Clipboard panel, and grant permission when prompted.
-- `USBFS_IPAD_MIRROR_BACKEND=devicehub` requires the native driver. Use either override on the launch command, for example `USBFS_IPAD_MIRROR_BACKEND=web usbfs`.
+| `USBFS_IPAD_MIRROR_BACKEND` | Behavior |
+| --- | --- |
+| `auto` (default) | Uses DeviceHub when `devicehub_rs` and `ffmpeg` are on `PATH`. Uses the web viewer when either is missing. |
+| `web` | Uses `pymobiledevice3` and a browser with HEVC support. Supports sharing text and images through the clipboard. |
+| `devicehub` | Requires the native DeviceHub app and `ffmpeg`. The app automatically shares text between the device and desktop clipboards. Use a build that accepts a positional UDID and `--no-mcp`. |
+
+For the web viewer, install a current `pymobiledevice3`. If you use `uv`, run `uv tool install --managed-python pymobiledevice3` or `uv tool upgrade pymobiledevice3` for an existing tool installation. Launch with `USBFS_IPAD_MIRROR_BACKEND=web usbfs` to select it explicitly. [PyMobileDevice3 installation](https://github.com/doronz88/pymobiledevice3#install)
+
+The web viewer listens on a temporary loopback port. It opens a dedicated app window in Chromium, Chrome, or Brave when available and uses `xdg-open` otherwise. The viewer opens in screen-only mode, and the app window fits the live screen's aspect ratio with a thin 3-pixel border. Click to tap and focus keyboard input, or drag to swipe. Right-click inside the screen to go Home, or press `F2` to toggle the viewer panels and hardware controls. [PyMobileDevice3 mirroring guide](https://doronz88.github.io/pymobiledevice3/latest/guides/screen-mirroring/#in-the-browser-serve-web)
 
 If a current `pymobiledevice3` is available, `usbfs` checks for the Developer Disk Image and attempts to mount it when absent. The first download can take longer than the helper's timeout. If needed, run `pymobiledevice3 mounter auto-mount --udid <UDID>` and retry. Close any foreground app using the camera or microphone before starting the mirror.
 
-Closing a native or dedicated browser window stops its mirror session. If `xdg-open` opens a tab in your default browser, press `Alt+m` to stop the server after closing the tab.
+Close the native or dedicated browser window, press `Alt+m`, or click **Stop Mirror** to end the session. If `xdg-open` opened a tab in your default browser, use **Stop Mirror** after closing it so the server also shuts down.
+
+#### Paste a laptop screenshot into an iPad app
+
+1. In the web mirror, press `F2`. Turn on **Sync** in the Clipboard panel and allow browser clipboard access when prompted.
+2. Copy the screenshot as image data on Linux. If you saved it as a file, open it and copy the image itself.
+3. Return to the mirror and use **Paste** in an iPad app that accepts images. You can press `F2` again to hide the controls after enabling sync.
+
+The browser app uses a temporary profile, so enable sync when you start a new session there. If the target app only supports file import, use `Ctrl+V` in a writable iPad share in the `usbfs` terminal to save the clipboard image, then import it through Files. [PyMobileDevice3 clipboard behavior](https://doronz88.github.io/pymobiledevice3/latest/guides/screen-mirroring/#in-the-browser-serve-web)
 
 ## Safe exit
 
 1. Let the active transfer finish. The exit confirmation blocks unmounting while a copy is in progress.
 2. Press `Esc` or `Alt+Q`, then confirm with `y`.
-3. Wait for the shell message below before unplugging.
+3. For a mount owned by `usbfs`, wait for the shell message below before unplugging. If the header showed **MOUNTED (GVfs)**, eject the phone in GNOME Files after `usbfs` exits.
 
 ```text
 [OK] External device cleanly unmounted. It is now safe to unplug the USB cable.
 ```
 
-The app unmounts child shares before parents, tries `fusermount3 -u` with `fusermount -u` as fallback, and checks the Linux mount table. It waits for the mount helpers to exit and removes empty Apple share mount directories after verifying the mounts are gone. If a mount remains busy, the app retries with backoff while retaining its session lock. Close files opened from the mount and change out of it in other terminals.
+The app stops active mirror sessions and cleans up the mounts it owns. It unmounts child shares before parents, tries `fusermount3 -u` with `fusermount -u` as fallback, and checks the Linux mount table. It waits for the mount helpers to exit and removes empty Apple share mount directories after verifying the mounts are gone. If a mount remains busy, the app retries with backoff while retaining its session lock. Close files opened from the mount and change out of it in other terminals.
 
 `Ctrl+C`, `SIGINT`, `SIGTERM`, and `SIGHUP` also enter cleanup. An uncatchable termination such as `SIGKILL` or a power loss can interrupt cleanup and leave a stale mount.
 
@@ -222,7 +237,7 @@ Find the phone's `mtp://…/` URL in the output. Then run `gio mount --unmount '
 
 ### Android is detected but storage did not open
 
-Unlock the phone. In its USB notification, switch to **Charging only**, then back to **File transfer / Android Auto**. Release any desktop MTP mount that reappears and press `r`. If the issue persists, try a known data cable connected directly to a different USB port. With other MTP clients closed, `jmtpfs -l` or `simple-mtpfs -l` lists devices detected by the corresponding installed driver.
+Unlock the phone. In its USB notification, switch to **Charging only**, then back to **File transfer / Android Auto**. Press `r` to retry detection. If the issue persists, try a known data cable connected directly to a different USB port. With other MTP clients closed, `jmtpfs -l` or `simple-mtpfs -l` lists devices detected by the corresponding installed driver.
 
 ### iPhone/iPad or a particular share is missing
 
@@ -260,6 +275,16 @@ findmnt -rn -t fuse.usbfs,fuse.ifuse,fuse.jmtpfs,fuse.simple-mtpfs -o TARGET,FST
 ```
 
 An Apple session can have several child mounts even if the top-level directory is a plain local folder. If a session was forcibly stopped, relaunch `usbfs` and select your platform to let startup cleanup verify and clear the stale mounts before reuse.
+
+## Credits
+
+Thanks to the maintainers and contributors of the projects that make USB access and mirroring possible.
+
+- **PyMobileDevice3** provides the interactive iPhone and iPad web mirror, clipboard bridge, and Developer Disk Image tools. [PyMobileDevice3 repository](https://github.com/doronz88/pymobiledevice3)
+- **iFuse** mounts iPhone and iPad media and app document shares. Device discovery, pairing, and USB communication use the Libimobiledevice toolchain. [iFuse repository](https://github.com/libimobiledevice/ifuse) · [libimobiledevice repository](https://github.com/libimobiledevice/libimobiledevice) · [usbmuxd repository](https://github.com/libimobiledevice/usbmuxd)
+- **scrcpy**, from Genymobile, provides Android screen mirroring and control over Android Debug Bridge. [scrcpy repository](https://github.com/Genymobile/scrcpy) · [Android Debug Bridge documentation](https://developer.android.com/tools/adb)
+- **jmtpfs** and **simple-mtpfs** provide FUSE mounts for Android storage through **libmtp**. **GNOME GVfs** lets `usbfs` reuse an existing desktop mount. [jmtpfs repository](https://github.com/JasonFerrara/jmtpfs) · [simple-mtpfs repository](https://github.com/phatina/simple-mtpfs) · [libmtp repository](https://github.com/libmtp/libmtp) · [GVfs repository](https://gitlab.gnome.org/GNOME/gvfs)
+- **DeviceHub** provides the optional native iPhone and iPad mirror. [DeviceHub repository](https://github.com/jkcoxson/devicehub_rs)
 
 ## Development
 
