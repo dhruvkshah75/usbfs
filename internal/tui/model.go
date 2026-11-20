@@ -14,10 +14,12 @@ import (
 
 	"usbfs/internal/device"
 	"usbfs/internal/fsops"
+	"usbfs/internal/mirror"
 )
 
 type pane struct {
 	path         string
+	loadingPath  string
 	entries      []fsops.Entry
 	cursor       int
 	filtering    bool
@@ -92,6 +94,9 @@ func (p *pane) queryLabel() string {
 
 type Model struct {
 	session              *device.Session
+	mirrors              *mirror.Manager
+	mirrorPending        bool
+	mirroring            map[device.USBIdentity]bool
 	panes                [2]pane
 	focus                int
 	platform             device.Platform
@@ -143,13 +148,15 @@ func New(session *device.Session, cwd string) *Model {
 	spin := spinner.New(spinner.WithSpinner(spinner.Dot))
 	spin.Style = foreground(coral, surfaceElevated)
 	return &Model{
-		session: session, panes: [2]pane{{path: "."}, {path: cwd}},
-		width: 80, height: 24, spinner: spin,
+		session: session, mirrors: mirror.New(mirror.Android{}, mirror.DefaultOptions()),
+		mirroring: make(map[device.USBIdentity]bool),
+		panes:     [2]pane{{path: "."}, {path: cwd}},
+		width:     80, height: 24, spinner: spin,
 	}
 }
 
 func (m *Model) Init() tea.Cmd {
-	return tea.Batch(tea.SetWindowTitle("usbfs"), poll(), m.spinner.Tick)
+	return tea.Batch(tea.SetWindowTitle("usbfs"), poll(), m.spinner.Tick, m.watchMirror())
 }
 
 func poll() tea.Cmd {
@@ -200,7 +207,8 @@ func listExternal(session *device.Session, path string) listResult {
 		return result
 	}
 	defer root.Close()
-	result.entries, result.err = fsops.List(root, relative)
+	gvfsPath, gvfsURI := session.GVFS()
+	result.entries, result.err = (fsops.GVFS{Path: gvfsPath, URI: gvfsURI}).List(root, relative)
 	return result
 }
 
@@ -235,6 +243,8 @@ func (m *Model) scan() tea.Cmd {
 
 func (m *Model) navigate(index int, path string) tea.Cmd {
 	m.panes[index].stopSearch()
+	m.panes[index].loadingPath = path
+	m.drag = nil
 	m.busy = true
 	session := m.session
 	return m.work(func() tea.Msg {
@@ -292,16 +302,18 @@ func (m *Model) startCopy(from int, entry fsops.Entry, target string) tea.Cmd {
 			copy.total.Store(total)
 			copy.count.Store(count)
 		}
+		gvfsPath, gvfsURI := session.GVFS()
+		gvfs := fsops.GVFS{Path: gvfsPath, URI: gvfsURI}
 		if result.download {
 			ids, err := session.FilesystemIDs()
 			if err != nil {
 				result.err = err
 				return result
 			}
-			result.err = fsops.Download(root, relative, target, report, ids...)
+			result.err = gvfs.Download(root, relative, target, report, ids...)
 			result.target = list(nil, to, viewPath)
 		} else {
-			result.err = fsops.Upload(root, source, relative, report)
+			result.err = gvfs.Upload(root, source, relative, report)
 			result.target = listExternal(session, viewPath)
 		}
 		return result
@@ -337,10 +349,14 @@ func (m *Model) createItem(name string, prompt *createPrompt) tea.Cmd {
 			return result
 		}
 		defer root.Close()
+		gvfs := fsops.GVFS{}
+		if index == 0 {
+			gvfs.Path, gvfs.URI = session.GVFS()
+		}
 		if prompt.image != nil {
-			result.err = fsops.CreateFile(root, relative, name, prompt.image.data)
+			result.err = gvfs.Create(root, relative, name, false, prompt.image.data)
 		} else {
-			result.err = fsops.Create(root, relative, name, prompt.folder)
+			result.err = gvfs.Create(root, relative, name, prompt.folder, nil)
 		}
 		if result.err == nil {
 			if index == 0 {

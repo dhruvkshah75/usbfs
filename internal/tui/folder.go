@@ -85,7 +85,9 @@ func (m *Model) copyFolder(job *folderCopy) tea.Cmd {
 			return result
 		}
 		defer target.Close()
-		report := fsops.CopyFolder(source, target, name, job.plan, result.download, func(count, _ int64) {
+		path, uri := session.GVFS()
+		gvfs := fsops.GVFS{Path: path, URI: uri}
+		report := gvfs.CopyFolder(source, target, name, job.plan, result.download, func(count, _ int64) {
 			copy.count.Store(count)
 		})
 		result.folder = &report

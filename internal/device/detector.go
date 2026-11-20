@@ -67,6 +67,9 @@ func parseAppleShares(output string) []appleShare {
 
 type Device struct {
 	Kind, Name string
+	USB        USBIdentity
+	Owner      MountOwner
+	MountPath  string
 	driver     string
 	args       []string
 }
@@ -159,7 +162,7 @@ func find(driver string) (Device, error) {
 		if err != nil || name == "" {
 			name = "Apple device"
 		}
-		return Device{"iOS/iPadOS", name, driver, []string{"--udid", id}}, nil
+		return Device{Kind: "iOS/iPadOS", Name: name, driver: driver, args: []string{"--udid", id}}, nil
 	}
 	listing, err := command(driver, "-l")
 	if err != nil {
@@ -170,10 +173,10 @@ func find(driver string) (Device, error) {
 	}
 	if driver == "jmtpfs" {
 		if id, name, ok := parseJMTP(listing); ok {
-			return Device{"Android MTP", name, driver, []string{"-device=" + id}}, nil
+			return Device{Kind: "Android MTP", Name: name, driver: driver, args: []string{"-device=" + id}}, nil
 		}
 	} else if id, name, ok := parseMTP(listing); ok {
-		return Device{"Android MTP", name, driver, []string{"--device", id}}, nil
+		return Device{Kind: "Android MTP", Name: name, driver: driver, args: []string{"--device", id}}, nil
 	}
 	return Device{}, nil
 }

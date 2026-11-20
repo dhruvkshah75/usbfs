@@ -33,6 +33,41 @@ func runes(text string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(text)}
 }
 
+func TestDeviceFolderShowsLoadingBeforeListCompletes(t *testing.T) {
+	m := New(&device.Session{}, "/home/user")
+	m.ready, m.platform = true, device.Android
+	m.panes[0].entries = []fsops.Entry{{Name: "Download", Folder: true}, {Name: "parent.txt"}}
+	box := m.paneBoxes(m.paneHeight())[0]
+	click := tea.MouseMsg{X: box.x + 3, Y: box.y + 3, Button: tea.MouseButtonLeft}
+	m.Update(click)
+	click.Action = tea.MouseActionRelease
+	_, load := m.Update(click)
+	view := ansi.Strip(m.View())
+	if load == nil || !m.busy || !strings.Contains(view, "Download") ||
+		!strings.Contains(view, "Loading folder") || strings.Contains(view, "parent.txt") {
+		t.Fatalf("folder did not open in its loading state:\n%s", view)
+	}
+	if _, search := m.Update(runes("m")); search != nil {
+		t.Fatal("search started before the destination folder was loaded")
+	}
+
+	m.Update(listResult{index: 0, path: "Download", err: os.ErrPermission})
+	if view := ansi.Strip(m.View()); m.busy || !strings.Contains(view, "Permission denied") ||
+		!strings.Contains(view, "parent.txt") || strings.Contains(view, "Loading folder") {
+		t.Fatalf("failed read did not restore the previous folder:\n%s", view)
+	}
+
+	_, load = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if load == nil || !strings.Contains(ansi.Strip(m.View()), "Loading folder") {
+		t.Fatal("keyboard navigation did not show the loading state")
+	}
+	m.Update(listResult{index: 0, path: "Download", entries: []fsops.Entry{{Name: "new-file.txt"}}})
+	if view := ansi.Strip(m.View()); m.busy || !strings.Contains(view, "new-file.txt") ||
+		strings.Contains(view, "Loading folder") || strings.Contains(view, "parent.txt") {
+		t.Fatalf("finished read did not show the destination contents:\n%s", view)
+	}
+}
+
 func TestBusyAndroidWaitsForManualRetry(t *testing.T) {
 	m := New(&device.Session{}, "/home/user")
 	m.platform = device.Android

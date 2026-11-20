@@ -24,6 +24,7 @@ type Session struct {
 	closing      atomic.Bool
 	mounted      bool
 	current      Device
+	gvfs         gvfsMount
 	drivers      map[string]*driverProcess
 	mountedPaths []string
 	mountDirs    []string
@@ -85,12 +86,47 @@ func (s *Session) DetectAndMount(platform Platform) (Device, error) {
 		return Device{}, fmt.Errorf("previous mount is still busy. Close files opened from the device: %w", err)
 	}
 	s.current = Device{}
-	driver, err := mountDriver(platform)
-	if err != nil {
-		return Device{}, err
+	driver, driverErr := mountDriver(platform)
+	var d Device
+	var err error
+	if driverErr == nil {
+		d, err = find(driver)
 	}
-	d, err := find(driver)
-	if err != nil || d.Kind == "" || s.closing.Load() {
+	if s.closing.Load() {
+		return Device{}, nil
+	}
+	if d.driver == "jmtpfs" {
+		bus, dev, _ := strings.Cut(strings.TrimPrefix(d.args[0], "-device="), ",")
+		d.USB = usbIdentity(usbSysfs, bus, dev)
+	}
+	attach := func() bool {
+		m := resolveGVFS(d)
+		if m.path == "" {
+			return false
+		}
+		root, err := s.openGVFS(m)
+		if err != nil {
+			return false
+		}
+		root.Close()
+		if d.Kind == "" {
+			d.Kind, d.Name = "Android MTP", m.name
+		}
+		d.Owner, d.MountPath = MountOwnerExternalGVfs, m.path
+		if d.USB == (USBIdentity{}) {
+			d.USB = m.usb
+		}
+		s.current, s.gvfs = d, m
+		s.active.Store(true)
+		return true
+	}
+	if platform == Android && attach() {
+		return d, nil
+	}
+	if driverErr != nil {
+		return Device{}, driverErr
+	}
+	if err != nil || d.Kind == "" {
 		return Device{}, err
 	}
 	if err := prepareMountDir(s.path, false); err != nil {
@@ -100,6 +136,15 @@ func (s *Session) DetectAndMount(platform Platform) (Device, error) {
 		err = s.startApple(d)
 	} else {
 		err = s.start(d, s.path)
+		if errors.Is(err, ErrMTPBusy) && !s.closing.Load() && attach() {
+			return d, nil
+		}
+		if driver := s.drivers[s.path]; driver != nil {
+			// libmtp can reset the device during startup and change its bus address.
+			if usb := mountedUSB(driver.cmd.Process.Pid); usb != (USBIdentity{}) {
+				d.USB = usb
+			}
+		}
 	}
 	if len(s.mountedPaths) == 0 {
 		return Device{}, err
@@ -160,6 +205,10 @@ func (s *Session) Close(warnings io.Writer) bool {
 }
 
 func (s *Session) cleanup(warnings io.Writer) error {
+	if s.current.Owner == MountOwnerExternalGVfs {
+		s.current = Device{}
+		s.gvfs = gvfsMount{}
+	}
 	if err := s.refreshMounts(); err != nil {
 		return err
 	}
@@ -218,7 +267,9 @@ func (s *Session) refreshMounts() error {
 	slices.SortFunc(paths, func(a, b string) int { return len(b) - len(a) })
 	s.mountedPaths = paths
 	s.mounted = s.mounted || len(paths) != 0
-	s.active.Store(len(paths) != 0)
+	if s.gvfs.path == "" {
+		s.active.Store(len(paths) != 0)
+	}
 	return nil
 }
 
@@ -320,6 +371,14 @@ func (s *Session) OpenPath(relative string) (*os.Root, string, error) {
 	}
 	target := s.path
 	relative = filepath.Clean(relative)
+	if s.current.Owner == MountOwnerExternalGVfs {
+		root, err := s.openGVFS(s.gvfs)
+		if err != nil {
+			s.active.Store(false)
+			return nil, "", errors.Join(ErrUnmounted, err)
+		}
+		return root, relative, nil
+	}
 	if s.current.driver == "ifuse" {
 		share, rest, _ := strings.Cut(relative, string(filepath.Separator))
 		if share == "." {
@@ -363,7 +422,11 @@ func (s *Session) FilesystemIDs() ([]uint64, error) {
 		return nil, err
 	}
 	ids := make([]uint64, 0, len(s.mountedPaths))
-	for _, path := range s.mountedPaths {
+	paths := s.mountedPaths
+	if s.gvfs.path != "" {
+		paths = append(slices.Clone(paths), s.gvfs.path)
+	}
+	for _, path := range paths {
 		info, err := os.Stat(path)
 		if err != nil {
 			return nil, err

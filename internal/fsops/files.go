@@ -14,21 +14,24 @@ import (
 
 // Create adds one new item inside dir without modifying any existing item.
 func Create(root *os.Root, dir, name string, folder bool) error {
-	return create(root, dir, name, folder, nil)
+	return (GVFS{}).Create(root, dir, name, folder, nil)
 }
 
 func CreateFile(root *os.Root, dir, name string, data []byte) error {
-	return create(root, dir, name, false, data)
+	return (GVFS{}).Create(root, dir, name, false, data)
 }
 
-func create(root *os.Root, dir, name string, folder bool, data []byte) error {
+func (g GVFS) Create(root *os.Root, dir, name string, folder bool, data []byte) error {
 	if strings.TrimSpace(name) == "" || name == "." || name == ".." ||
 		strings.ContainsRune(name, filepath.Separator) || strings.ContainsFunc(name, unicode.IsControl) {
 		return errors.New("enter a single file or folder name")
 	}
 	path := filepath.Join(dir, name)
 	if folder {
-		return root.Mkdir(path, 0755)
+		return g.mkdir(root, path)
+	}
+	if g.URI != "" {
+		return g.upload(root, path, bytes.NewReader(data), int64(len(data)), func(int64, int64) {})
 	}
 	file, err := openNewFile(root, path)
 	if err != nil {
@@ -48,6 +51,10 @@ type Entry struct {
 
 // List uses absolute paths for the host and root-relative paths for the device.
 func List(root *os.Root, path string) ([]Entry, error) {
+	return (GVFS{}).List(root, path)
+}
+
+func (g GVFS) List(root *os.Root, path string) ([]Entry, error) {
 	open, stat := os.Open, os.Stat
 	if root != nil {
 		open, stat = root.Open, root.Lstat
@@ -64,7 +71,9 @@ func List(root *os.Root, path string) ([]Entry, error) {
 	entries := make([]Entry, 0, len(items))
 	for _, item := range items {
 		entry := Entry{Name: item.Name(), Folder: item.IsDir(), Symlink: item.Type()&os.ModeSymlink != 0}
-		if root != nil || entry.Symlink {
+		// GVfs returns entry types with the directory listing. Check access
+		// when opening or copying an item to avoid a stat for each entry.
+		if (root != nil && g.URI == "") || entry.Symlink {
 			info, err := stat(filepath.Join(path, item.Name()))
 			if err != nil {
 				entry.Locked = true

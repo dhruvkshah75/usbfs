@@ -21,21 +21,40 @@ func (e *StageError) Error() string { return e.Stage + ": " + e.Err.Error() }
 func (e *StageError) Unwrap() error { return e.Err }
 
 func openNewFile(root *os.Root, path string) (*os.File, error) {
-	if _, err := root.Lstat(path); !errors.Is(err, os.ErrNotExist) {
-		if err == nil {
-			return nil, os.ErrExist
-		}
+	if err := checkNew(root, path); err != nil {
 		return nil, err
 	}
 	return root.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 }
 
 func Download(device *os.Root, source, hostDir string, progress func(int64, int64), otherDevices ...uint64) error {
+	return (GVFS{}).Download(device, source, hostDir, progress, otherDevices...)
+}
+
+func (g GVFS) Download(device *os.Root, source, hostDir string, progress func(int64, int64), otherDevices ...uint64) error {
+	if g.URI != "" {
+		info, err := device.Lstat(source)
+		if err != nil {
+			return &StageError{"Cannot read file from external device", err}
+		}
+		if !info.Mode().IsRegular() {
+			return errors.New("only regular files can be copied")
+		}
+		return downloadToHost(device, hostDir, otherDevices, func(host *os.Root) error {
+			return g.download(device, host, source, filepath.Base(source), info.Size(), progress)
+		})
+	}
 	src, info, err := openRegular(device.OpenFile, source)
 	if err != nil {
 		return &StageError{"Cannot read file from external device", err}
 	}
 	defer src.Close()
+	return downloadToHost(device, hostDir, otherDevices, func(host *os.Root) error {
+		return downloadFile(host, filepath.Base(source), src, info, progress)
+	})
+}
+
+func downloadToHost(device *os.Root, hostDir string, otherDevices []uint64, copy func(*os.Root) error) error {
 	host, err := os.OpenRoot(hostDir)
 	if err != nil {
 		return err
@@ -54,15 +73,19 @@ func Download(device *os.Root, source, hostDir string, progress func(int64, int6
 		return errors.New("choose a Linux destination outside the external device")
 	}
 
-	return downloadFile(host, filepath.Base(source), src, info, progress)
+	return copy(host)
 }
 
 func downloadFile(host *os.Root, target string, src *os.File, info os.FileInfo, progress func(int64, int64)) error {
+	return publishDownload(host, target, func(dest *os.File) error {
+		_, err := writeCopy(dest, src, info.Size(), progress)
+		return err
+	})
+}
+
+func publishDownload(host *os.Root, target string, write func(*os.File) error) error {
 	// Publish only a complete file, and use Link to atomically reject collisions.
-	if _, err := host.Lstat(target); !errors.Is(err, os.ErrNotExist) {
-		if err == nil {
-			return os.ErrExist
-		}
+	if err := checkNew(host, target); err != nil {
 		return err
 	}
 	temp := filepath.Join(filepath.Dir(target), ".usbfs-"+rand.Text())
@@ -71,19 +94,26 @@ func downloadFile(host *os.Root, target string, src *os.File, info os.FileInfo, 
 		return err
 	}
 	defer host.Remove(temp)
-	if _, err := writeCopy(dest, src, info.Size(), progress); err != nil {
+	if err := write(dest); err != nil {
 		return err
 	}
 	return host.Link(temp, target)
 }
 
 func Upload(device *os.Root, source, deviceDir string, progress func(int64, int64)) error {
+	return (GVFS{}).Upload(device, source, deviceDir, progress)
+}
+
+func (g GVFS) Upload(device *os.Root, source, deviceDir string, progress func(int64, int64)) error {
 	src, info, err := openRegular(os.OpenFile, source)
 	if err != nil {
 		return &StageError{"Cannot read file from Linux", err}
 	}
 	defer src.Close()
 	name := filepath.Join(deviceDir, filepath.Base(source))
+	if g.URI != "" {
+		return g.upload(device, name, src, info.Size(), progress)
+	}
 	return uploadFile(device, name, src, info, progress)
 }
 

@@ -80,8 +80,22 @@ func (m *Model) View() string {
 	}
 	header := line(foreground(coral, surfaceElevated).Bold(true), m.width, " usbfs")
 	if m.device.Kind != "" {
-		header = styledLine(m.width, foreground(coral, surfaceElevated).Bold(true).Render(" usbfs   ")+
-			foreground(teal, surfaceElevated).Bold(true).Render("● MOUNTED   ")+
+		active := m.mirroring[m.device.USB]
+		ink := coral
+		if m.device.Kind == "iOS/iPadOS" {
+			ink = muted
+		}
+		badge := ""
+		if active {
+			badge = foreground(teal, surfaceElevated).Render(" ● Mirroring")
+		}
+		mount := "   ● MOUNTED   "
+		if m.device.Owner == device.MountOwnerExternalGVfs {
+			mount = "   ● MOUNTED (GVfs)   "
+		}
+		header = styledLine(m.width, foreground(coral, surfaceElevated).Bold(true).Render(m.deviceHeaderPrefix())+
+			foreground(ink, surfaceElevated).Bold(true).Render(m.mirrorAction(active))+badge+
+			foreground(teal, surfaceElevated).Bold(true).Render(mount)+
 			foreground(cream, surfaceElevated).Render(clean(m.device.Kind+" · "+m.device.Name))+
 			foreground(muted, surfaceElevated).Render("   DEVICE DELETE PROTECTED"), surfaceElevated)
 	}
@@ -160,8 +174,16 @@ func (m *Model) waiting(height int) string {
 
 func (m *Model) pane(index, width, height int) string {
 	p := &m.panes[index]
+	loading := p.loadingPath != ""
+	if loading {
+		p = &pane{path: p.loadingPath}
+	}
 	entries := p.visible()
-	title, path := "EXTERNAL DEVICE", filepath.Join(m.session.Path(), p.path)
+	mountPath := m.session.Path()
+	if m.device.MountPath != "" {
+		mountPath = m.device.MountPath
+	}
+	title, path := "EXTERNAL DEVICE", filepath.Join(mountPath, p.path)
 	if index == 1 {
 		title, path = "LINUX HOST", p.path
 	}
@@ -183,14 +205,19 @@ func (m *Model) pane(index, width, height int) string {
 		}
 	}
 	empty := "  Empty folder"
-	if p.filtering {
+	if loading {
+		path = p.path
+		empty = "  " + m.spinner.View() + " Loading folder…"
+	} else if p.filtering {
 		empty = "  No matches"
 		if p.search != nil {
 			empty = "  Searching subfolders…"
 		}
 	}
 	if height < 5 {
-		if p.filtering {
+		if loading {
+			title = clean(filepath.Base(path))
+		} else if p.filtering {
 			title = filter
 		}
 		rows := []string{line(foreground(coral, surfaceSoft).Bold(true), width, " "+title)}
@@ -299,6 +326,12 @@ func (m *Model) footer() string {
 	keys := "[F1] Help   [Esc] Exit"
 	switch {
 	case m.ready:
+		if m.device.Owner == device.MountOwnerExternalGVfs {
+			keys += "   [r] Retry"
+		}
+		if action := m.mirrorAction(m.mirroring[m.device.USB]); action != "" {
+			keys += "   " + action
+		}
 		keys += "   [Tab] Switch   [Alt+c] Copy"
 	case m.platform != "" && m.width >= 36:
 		keys += "   [r] Retry"
@@ -323,6 +356,9 @@ func (m *Model) footer() string {
 func (m *Model) modal(screen string) string {
 	width := min(56, m.width-2)
 	prompt, controls := "Unmount device and exit?", "[y] Unmount & Quit   [n] Cancel"
+	if m.device.Owner == device.MountOwnerExternalGVfs {
+		prompt, controls = "Exit usbfs? GNOME will keep the phone mounted.", "[y] Quit   [n] Cancel"
+	}
 	if m.folder != nil {
 		job := m.folder
 		prompt = fmt.Sprintf("Copy %s? %d files", clean(filepath.Base(job.source)), job.plan.Files)
@@ -381,6 +417,9 @@ func (m *Model) compactModal() string {
 		return styledLine(m.width, m.create.input.View(), surfaceElevated)
 	}
 	label := "y Unmount / n"
+	if m.device.Owner == device.MountOwnerExternalGVfs {
+		label = "y Quit / n"
+	}
 	if m.folder != nil {
 		label = "y Copy / n"
 	}

@@ -73,6 +73,10 @@ func PlanFolder(source *os.Root) (FolderPlan, error) {
 
 // CopyFolder creates a new tree. A conflict skips the item and any descendants.
 func CopyFolder(source, target *os.Root, name string, plan FolderPlan, download bool, progress func(int64, int64)) FolderReport {
+	return (GVFS{}).CopyFolder(source, target, name, plan, download, progress)
+}
+
+func (g GVFS) CopyFolder(source, target *os.Root, name string, plan FolderPlan, download bool, progress func(int64, int64)) FolderReport {
 	report := FolderReport{Skipped: plan.Skipped, Failed: plan.Failed, FirstError: plan.firstError}
 	fail := func(path string, err error) {
 		if errors.Is(err, os.ErrExist) {
@@ -84,7 +88,11 @@ func CopyFolder(source, target *os.Root, name string, plan FolderPlan, download 
 			}
 		}
 	}
-	if err := Create(target, ".", name, true); err != nil {
+	writer := g
+	if download {
+		writer = GVFS{}
+	}
+	if err := writer.Create(target, ".", name, true, nil); err != nil {
 		fail(name, err)
 		report.Skipped += len(plan.items)
 		return report
@@ -105,11 +113,11 @@ func CopyFolder(source, target *os.Root, name string, plan FolderPlan, download 
 			blocked[item.path] = item.dir
 			report.Skipped++
 		} else if item.dir {
-			if err := tree.Mkdir(item.path, 0755); err != nil {
+			if err := writer.mkdir(tree, item.path); err != nil {
 				fail(dst, err)
 				blocked[item.path] = true
 			}
-		} else if err := copyFolderFile(source, tree, item.path, download); err != nil {
+		} else if err := g.copyFolderFile(source, tree, item.path, download); err != nil {
 			fail(dst, err)
 		} else {
 			report.Copied++
@@ -122,7 +130,18 @@ func CopyFolder(source, target *os.Root, name string, plan FolderPlan, download 
 	return report
 }
 
-func copyFolderFile(source, target *os.Root, path string, download bool) error {
+func (g GVFS) copyFolderFile(source, target *os.Root, path string, download bool) error {
+	progress := func(int64, int64) {}
+	if g.URI != "" && download {
+		info, err := source.Lstat(path)
+		if err != nil {
+			return err
+		}
+		if !info.Mode().IsRegular() {
+			return errors.New("only regular files can be copied")
+		}
+		return g.download(source, target, path, path, info.Size(), progress)
+	}
 	src, info, err := openRegular(func(name string, flags int, mode os.FileMode) (*os.File, error) {
 		return source.OpenFile(name, flags|syscall.O_NOFOLLOW, mode)
 	}, path)
@@ -130,7 +149,9 @@ func copyFolderFile(source, target *os.Root, path string, download bool) error {
 		return err
 	}
 	defer src.Close()
-	progress := func(int64, int64) {}
+	if g.URI != "" {
+		return g.upload(target, path, src, info.Size(), progress)
+	}
 	if download {
 		return downloadFile(target, path, src, info, progress)
 	}

@@ -2,7 +2,7 @@
 
 `usbfs` is a dual-pane terminal file manager for copying files between a Linux computer and a USB-connected Android phone, iPhone, or iPad. The external device is on the left and the Linux host is on the right. Browse and filter either pane, open files in Linux desktop applications, and copy files and folders with the keyboard or mouse.
 
-[Install](#install) · [Connect a device](#connect-a-device) · [Controls](#controls) · [Copy and manage files](#copy-and-manage-files) · [Safe exit](#safe-exit) · [Troubleshooting](#troubleshooting) · [Development](#development)
+[Install](#install) · [Connect a device](#connect-a-device) · [Controls](#controls) · [Copy and manage files](#copy-and-manage-files) · [Screen mirroring](#screen-mirroring) · [Safe exit](#safe-exit) · [Troubleshooting](#troubleshooting) · [Development](#development)
 
 ![usbfs showing an iPad's Brave file share on the left and Linux files on the right](docs/usbfs-screenshot.png)
 
@@ -125,8 +125,8 @@ Keep the mount directory reserved for `usbfs`. It is used as a filesystem mount 
 | Choose platform at startup | `a` Android, `i` iPhone/iPad |
 | Retry detection or return to device selection while unmounted | `r` retry, `b` device selection |
 | Switch pane | `Tab`, or click in a pane |
-| Select a row | `↑`, `↓`, or click a row. The mouse wheel moves the selection. |
-| Enter a folder or open a file | `→` or `Enter` |
+| Select a row | `↑`, `↓`, or the mouse wheel. Clicking a file or a Linux host row also selects it. |
+| Enter a folder or open a file | `→` or `Enter`. Click a folder in the external device pane to open it. |
 | Go up a directory | `←`. The device pane stops at its mount root. |
 | Search the focused pane and its subfolders | Start typing. `Backspace` erases one character, and `Esc` or `Ctrl+U` clears the search. |
 | Save a clipboard image | `Ctrl+V`, edit the filename, and press `Enter` to save in the focused folder. |
@@ -136,6 +136,7 @@ Keep the mount directory reserved for `usbfs`. It is used as a filesystem mount 
 | Create a directory or empty file | `Ctrl+N` directory, `Ctrl+F` empty file. Name it and press `Enter`, or press `Esc` to cancel. |
 | Delete a regular Linux file | `Delete`, then `y` to permanently delete or `n` / `Esc` to cancel |
 | Open or close the centered Help window | `F1`. `Esc` also closes it. Scroll with `↑` / `↓`, the mouse wheel, `PgUp` / `PgDn`, or `Home` / `End`. |
+| Toggle Android screen mirroring | `Alt+m` or click **Mirror Screen / Stop Mirror** in the device header. |
 | Exit | `Esc` or `Alt+Q`. During a search, the first `Esc` clears it. If a device is mounted, confirm exit with `y` or cancel with `n` / `Esc`. Plain `q` also works on the setup screen. |
 
 The coral highlight shows the active selection. `[DIR]` marks folders and `[LOCKED]` marks entries the pane cannot open. Typing matches names in the focused pane case-insensitively and ignores whitespace. Current-folder matches appear first, and subfolder matches appear below them as the search finds them, starting with nearby folders. Each pane keeps its own query when you switch focus. Changing directories clears that pane's query. If the terminal is narrow, the app stacks the panes or displays just the focused one.
@@ -156,6 +157,25 @@ Folder copying previews the destination and file count before starting. It copie
 
 Downloads are written to a temporary file in the destination and published at the final name only after a complete copy. The Linux destination filesystem must support hard links for that final step. An interrupted or unverified upload may leave a new partial file on the device. Check it on the device before retrying, since `usbfs` will reject the occupied name. Large MTP transfers may also need temporary disk space on Linux, depending on the driver. [jmtpfs implementation notes](https://github.com/JasonFerrara/jmtpfs#readme)
 
+## Screen mirroring
+
+On Ubuntu, install `adb` with `sudo apt install adb` and put the latest official
+`scrcpy` release on `PATH`. Run `usbfs` from your graphical desktop session.
+Optionally install `libnotify-bin` for desktop notifications after a file push.
+See the [official scrcpy Linux installation instructions](https://github.com/Genymobile/scrcpy/blob/master/doc/linux.md).
+
+Enable **USB debugging** in Android's **Developer options**, unlock the phone,
+and accept the **Allow USB debugging** prompt. Once the phone is mounted in
+`usbfs`, press `Alt+m` or click **Mirror Screen**. See [Android's USB debugging instructions](https://developer.android.com/tools/adb#Enabling).
+
+Use the desktop mirror window to control the phone with the mouse and
+keyboard. Drag a non-APK file onto the window to push it to
+`/sdcard/Download/`. Scrcpy handles these drops directly and can replace a
+same-named file. It handles APK drops as installation requests. The physical
+screen turns off while the mirror is open, and mounting and file browsing
+continue in the TUI. Click **Stop Mirror**, press `Alt+m` again, or close the window
+to stop the mirror. [Scrcpy controls and drag-and-drop behavior](https://github.com/Genymobile/scrcpy/blob/master/doc/control.md)
+
 ## Safe exit
 
 1. Let the active transfer finish. The exit confirmation blocks unmounting while a copy is in progress.
@@ -174,9 +194,11 @@ The app unmounts child shares before parents, tries `fusermount3 -u` with `fuser
 
 ### Android USB connection is busy
 
-Ubuntu Files (GNOME/GVfs), KDE's file manager, or another MTP tool can claim the USB connection before `usbfs`. Eject the phone's entry from that application after its transfers finish. Leave the phone connected and unlocked, then press `r` in `usbfs`. If Ubuntu Files remounts the phone after a reconnect, repeat the eject step. The GNOME MTP service can run independently of `usbfs`, even when the file-manager window is closed. [libmtp troubleshooting](https://github.com/libmtp/libmtp/issues/231)
+On GNOME, `usbfs` reuses the matching Android mount when GNOME Files already has it open. The device header shows **MOUNTED (GVfs)**, and GNOME keeps the mount after `usbfs` exits. Press `r` to detect the mount again if storage appears empty. If no matching mount is available, `usbfs` uses its usual MTP driver.
 
-On GNOME, you can also inspect and release the phone from another terminal using `gio`. If the command is missing on Ubuntu, install `libglib2.0-bin`.
+If another MTP client holds the connection, finish its transfers and eject the phone in that client. Leave the phone connected and unlocked, then press `r` in `usbfs`. [libmtp troubleshooting](https://github.com/libmtp/libmtp/issues/231)
+
+If the conflict persists, you can inspect and release the phone from another terminal using `gio`. If the command is missing on Ubuntu, install `libglib2.0-bin`.
 
 ```bash
 gio mount -l
@@ -234,6 +256,7 @@ The Go executable wraps existing USB mount utilities. Bubble Tea manages input a
 | [`cmd/usbfs`](cmd/usbfs) | Executable, signal handling, and final cleanup |
 | [`internal/device`](internal/device) | Driver selection, platform detection, Apple share discovery, session lock, and verified mount lifecycle |
 | [`internal/fsops`](internal/fsops) | File listing and launch, new-item creation, and non-overwriting transfers |
+| [`internal/mirror`](internal/mirror) | Android ADB preflight, scrcpy process lifecycle, and file-push notifications |
 | [`internal/tui`](internal/tui) | Panes, filtering, keyboard and mouse input, confirmations, status updates, and Help |
 
 ```bash

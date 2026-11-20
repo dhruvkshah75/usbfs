@@ -15,6 +15,7 @@ import (
 
 	"usbfs/internal/device"
 	"usbfs/internal/fsops"
+	"usbfs/internal/mirror"
 )
 
 type openResult struct {
@@ -138,6 +139,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
+	case mirror.Event:
+		switch msg.State {
+		case mirror.Started:
+			m.mirroring[msg.USB] = true
+		case mirror.Exited:
+			delete(m.mirroring, msg.USB)
+		}
+		m.message(msg.Message, msg.Warning)
+		return m, m.watchMirror()
+	case mirrorToggleResult:
+		m.mirrorPending = false
+		if msg.err != nil {
+			m.message(msg.err.Error(), true)
+		}
 	case pollMsg:
 		if m.platform != "" && !m.ready && !m.busy && !m.confirm && m.mtpIssue == nil {
 			return m, tea.Batch(m.scan(), poll())
@@ -162,12 +177,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.applyList(listResult{1, m.panes[1].path, msg.local, msg.hostErr})
 			if msg.warning != nil {
 				m.message(msg.warning.Error(), true)
+			} else if msg.device.Owner == device.MountOwnerExternalGVfs && len(msg.external) == 0 {
+				m.message("Phone is mounted but storage is empty — unlock the phone, switch USB mode to File Transfer (MTP), and press r to retry.", false)
 			}
 		default:
 			m.message("", false)
 		}
 	case listResult:
 		m.busy = false
+		m.panes[msg.index].loadingPath = ""
 		if m.applyList(msg) {
 			m.message("", false)
 		}
@@ -401,7 +419,17 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 		m.help, m.helpOffset = true, 0
 		return nil
 	}
-	if m.ready {
+	if key == "alt+m" {
+		return m.toggleMirror()
+	}
+	if key == "r" && m.ready && m.device.Owner == device.MountOwnerExternalGVfs && !m.busy && !m.panes[m.focus].filtering {
+		for i := range m.panes {
+			m.panes[i].stopSearch()
+		}
+		m.ready = false
+		return m.scan()
+	}
+	if m.ready && m.panes[m.focus].loadingPath == "" {
 		p := &m.panes[m.focus]
 		switch {
 		case p.filtering && (key == "ctrl+u" || key == "esc"):

@@ -92,6 +92,14 @@ func destinationLabel(index int, path string) string {
 }
 
 func (m *Model) mouse(msg tea.MouseMsg) tea.Cmd {
+	if m.width >= 16 && m.height >= 6 && !m.confirm && m.folder == nil && m.create == nil && m.deleteName == "" &&
+		msg.Y == 0 && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		start := len(m.deviceHeaderPrefix())
+		if msg.X >= start && msg.X < start+len(m.mirrorAction(m.mirroring[m.device.USB])) {
+			m.drag = nil
+			return m.toggleMirror()
+		}
+	}
 	if !m.ready || m.busy || m.confirm || m.folder != nil || m.create != nil || m.deleteName != "" {
 		m.drag = nil
 		return nil
@@ -103,6 +111,10 @@ func (m *Model) mouse(msg tea.MouseMsg) tea.Cmd {
 		m.drag = nil
 		if drag == nil {
 			return nil
+		}
+		if index == 0 && drag.from == 0 && row >= 0 && drag.entry.Folder &&
+			!drag.moved && drag.x == msg.X && drag.y == msg.Y {
+			return m.navigate(index, filepath.Join(m.panes[index].path, drag.entry.Name))
 		}
 		if index < 0 || index == drag.from {
 			if drag.moved || drag.x != msg.X || drag.y != msg.Y {
