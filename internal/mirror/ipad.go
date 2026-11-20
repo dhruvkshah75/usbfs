@@ -107,7 +107,9 @@ func (iPad) Prepare(ctx context.Context, target device.Device, _ Options) (launc
 		// iPadOS 27 exposes the mounted DDI in the cryptex list.
 		out, err := ipadProbe(ctx, 4*time.Second, pmd, "cryptex", "list", "--udid", udid, "--userspace")
 		if err == nil && !strings.Contains(string(out), "com.apple.MobileAsset.DDI") {
-			_, _ = ipadProbe(ctx, 12*time.Second, pmd, "mounter", "auto-mount", "--udid", udid)
+			if _, err := ipadProbe(ctx, 12*time.Second, pmd, "mounter", "auto-mount", "--udid", udid); err != nil {
+				return launch{}, ipadMountError(err)
+			}
 		}
 	}
 	return plan, ctx.Err()
@@ -118,7 +120,31 @@ func ipadProbe(ctx context.Context, timeout time.Duration, path string, args ...
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.WaitDelay = time.Second
-	return cmd.Output()
+	out, err := cmd.Output()
+	if err != nil && ctx.Err() != nil {
+		return out, ctx.Err()
+	}
+	return out, err
+}
+
+func ipadMountError(err error) error {
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		var log recentLogs
+		for line := range strings.SplitSeq(string(exit.Stderr), "\n") {
+			log.add(strings.TrimSpace(line))
+		}
+		if message := log.ipadDiagnostic(); message != "" {
+			return errors.New(message)
+		}
+		if message := log.diagnostic(); message != "" {
+			return fmt.Errorf("Could not mount the Developer Disk Image. %s", message)
+		}
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return errors.New("Developer Disk Image mount timed out. Run pymobiledevice3 mounter auto-mount, then retry")
+	}
+	return fmt.Errorf("Could not mount the Developer Disk Image: %w", err)
 }
 
 const (
@@ -141,6 +167,7 @@ func ipadDiagnostic(log string) string {
 		(strings.Contains(log, "disabled") || strings.Contains(log, "not enabled") || strings.Contains(log, "enable developer mode")):
 		return "Enable Developer Mode on iPad (Settings → Privacy & Security → Developer Mode)."
 	case strings.Contains(log, "ddi not mounted"), strings.Contains(log, "developerdiskimagenotmounted"),
+		strings.Contains(log, "developerdiskimage") && strings.Contains(log, "none is mounted"),
 		strings.Contains(log, "developer disk image") && strings.Contains(log, "not mounted"),
 		strings.Contains(log, "invalidservice"), strings.Contains(log, "service not found"), strings.Contains(log, "invalid service"):
 		return "Developer Disk Image not mounted or missing the mirror service. Run pymobiledevice3 mounter auto-mount or reconnect iPad."

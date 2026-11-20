@@ -303,7 +303,11 @@ func (m *Manager) watch(key string, s *session) {
 			if message := log.ipadDiagnostic(); message != "" {
 				event = Event{Message: message, Warning: true}
 			} else if err != nil {
-				event = Event{Message: "iPad mirror failed. " + log.diagnostic(), Warning: true}
+				message := log.diagnostic()
+				if message == "" {
+					message = err.Error()
+				}
+				event = Event{Message: "iPad mirror failed. " + message, Warning: true}
 			}
 		}
 	}
@@ -354,11 +358,17 @@ func (r *recentLogs) ipadDiagnostic() string {
 }
 
 func (r *recentLogs) diagnostic() string {
-	latest := r.lines[(r.next+len(r.lines)-1)%len(r.lines)]
+	var latest string
 	for i := 1; i <= len(r.lines); i++ {
 		line := r.lines[(r.next+len(r.lines)-i)%len(r.lines)]
+		if _, message, ok := strings.Cut(line, " ERROR "); ok {
+			return message
+		}
 		if strings.Contains(strings.ToLower(line), "error:") {
 			return line
+		}
+		if latest == "" && !strings.Contains(line, "Run again with -v for the full traceback") {
+			latest = line
 		}
 	}
 	return latest

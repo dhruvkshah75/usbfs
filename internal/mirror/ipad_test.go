@@ -69,10 +69,11 @@ func TestIPadDiagnostics(t *testing.T) {
 		"ERROR: Developer Mode is disabled":         "Enable Developer Mode",
 		"InvalidServiceError":                       "Developer Disk Image",
 		"Developer Disk Image is not mounted":       "Developer Disk Image",
-		"PairingDialogResponsePendingError":         "Trust This Computer",
-		"Device locked":                             "Trust This Computer",
-		"Camera or microphone in use (9022)":        "camera or microphone",
-		"Device disconnected":                       "mirror stopped",
+		"The device does not offer the com.apple.coredevice.displayservice service, which its DeveloperDiskImage provides, and none is mounted.": "Developer Disk Image",
+		"PairingDialogResponsePendingError":  "Trust This Computer",
+		"Device locked":                      "Trust This Computer",
+		"Camera or microphone in use (9022)": "camera or microphone",
+		"Device disconnected":                "mirror stopped",
 	} {
 		if got := ipadDiagnostic(log); !strings.Contains(got, expected) {
 			t.Errorf("diagnostic for %q = %q, want %q", log, got, expected)
@@ -91,7 +92,12 @@ func TestIPadDDIPreflight(t *testing.T) {
 	writeScript(t, filepath.Join(dir, "pymobiledevice3"), `
 case "$1 $2" in
   "cryptex list") printf '%s' "$DDI_LIST";;
-  "mounter auto-mount") printf '%s' "$*" > "$DDI_CALLS"; exit 1;;
+  "mounter auto-mount")
+    printf '%s' "$*" > "$DDI_CALLS"
+    if [ -n "$DDI_ERROR" ]; then
+      printf '%s\n' "$DDI_ERROR" 'INFO Run again with -v for the full traceback' >&2
+      exit 1
+    fi;;
   *) exit 2;;
 esac`)
 	t.Setenv("DDI_LIST", "com.apple.MobileAsset.DDI")
@@ -105,8 +111,19 @@ esac`)
 		t.Fatalf("existing DDI triggered auto-mount: %v", err)
 	}
 	t.Setenv("DDI_LIST", "[]")
+	t.Setenv("DDI_ERROR", "2026-11-20 host pymobiledevice3.__main__[9] ERROR Developer Mode is disabled.")
+	if _, err := backend.Prepare(context.Background(), testIPad, Options{}); err == nil ||
+		!strings.Contains(err.Error(), "Enable Developer Mode on iPad") {
+		t.Fatalf("missing Developer Mode status: %v", err)
+	}
+	t.Setenv("DDI_ERROR", "2026-11-20 host pymobiledevice3.__main__[9] ERROR Download failed.")
+	if _, err := backend.Prepare(context.Background(), testIPad, Options{}); err == nil ||
+		err.Error() != "Could not mount the Developer Disk Image. Download failed." {
+		t.Fatalf("did not surface the underlying mount error: %v", err)
+	}
+	t.Setenv("DDI_ERROR", "")
 	if _, err := backend.Prepare(context.Background(), testIPad, Options{}); err != nil {
-		t.Fatalf("auto-mount failure prevented launch: %v", err)
+		t.Fatalf("successful auto-mount prevented launch: %v", err)
 	}
 	if out, err := os.ReadFile(calls); err != nil || string(out) != "mounter auto-mount --udid "+testIPad.USB.Serial {
 		t.Fatalf("unexpected auto-mount call: %q, %v", out, err)
