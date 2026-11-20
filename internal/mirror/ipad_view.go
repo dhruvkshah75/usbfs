@@ -14,6 +14,11 @@ import (
 
 // Keep the upstream viewer and its input handlers intact, and change only its presentation.
 const screenOnlyView = `<style>
+html[data-usbfs-screen] {
+	--usbfs-border: 3px;
+	--usbfs-video-width: calc(100vw - 2 * var(--usbfs-border));
+	--usbfs-video-height: calc(100dvh - 2 * var(--usbfs-border));
+}
 html[data-usbfs-screen] body {
 	margin: 0;
 	padding: 0;
@@ -35,14 +40,15 @@ html[data-usbfs-screen] #stage-wrap {
 }
 html[data-usbfs-screen] #device-frame {
 	padding: 0;
+	border: var(--usbfs-border) solid #625d58;
 	border-radius: 0;
 	box-shadow: none;
 	transform: none !important;
 	transition: none !important;
 }
 html[data-usbfs-screen] canvas#c {
-	width: min(100vw, calc(100dvh * var(--usbfs-ratio, 1))) !important;
-	height: min(100dvh, calc(100vw / var(--usbfs-ratio, 1))) !important;
+	width: min(var(--usbfs-video-width), calc(var(--usbfs-video-height) * var(--usbfs-ratio, 1))) !important;
+	height: min(var(--usbfs-video-height), calc(var(--usbfs-video-width) / var(--usbfs-ratio, 1))) !important;
 	border-radius: 0;
 }
 html[data-usbfs-screen] #offline-overlay {
@@ -67,10 +73,11 @@ window.addEventListener('DOMContentLoaded', () => {
 		if (location.hash !== '#usbfs-app' || !usbfsRoot.hasAttribute('data-usbfs-screen') ||
 			ratio === fittedRatio) return;
 		fittedRatio = ratio;
-		const frameWidth = outerWidth - innerWidth;
-		const frameHeight = outerHeight - innerHeight;
+		const border = 2 * parseFloat(getComputedStyle(usbfsRoot).getPropertyValue('--usbfs-border'));
+		const frameWidth = outerWidth - innerWidth + border;
+		const frameHeight = outerHeight - innerHeight + border;
 		const scale = Math.min(
-			Math.max(innerWidth, innerHeight) / Math.max(width, height),
+			(Math.max(innerWidth, innerHeight) - border) / Math.max(width, height),
 			(screen.availWidth - frameWidth) / width,
 			(screen.availHeight - frameHeight) / height,
 		);
