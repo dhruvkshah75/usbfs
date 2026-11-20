@@ -208,7 +208,14 @@ func (m *Manager) watchViewer(s *session, ready <-chan struct{}) error {
 		}
 		defer os.RemoveAll(profile)
 	}
-	cmd := s.viewer.command(profile)
+	viewer := s.viewer
+	screenURL, closeViewer, err := startScreenOnlyViewer(viewer.url)
+	if err != nil {
+		return fmt.Errorf("start screen-only iPad viewer: %w", err)
+	}
+	defer closeViewer()
+	viewer.url = screenURL
+	cmd := viewer.command(profile)
 	output, err := startLogged(cmd)
 	if err != nil {
 		return fmt.Errorf("open iPad viewer: %w", err)
@@ -219,7 +226,7 @@ func (m *Manager) watchViewer(s *session, ready <-chan struct{}) error {
 
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
-	message := "Mirroring iPad via serve-web"
+	message := "Mirroring iPad via serve-web · F2 toggles controls"
 	if !s.viewer.app {
 		message += " · Use Alt+m to stop the server"
 	}
@@ -234,6 +241,10 @@ func (m *Manager) watchViewer(s *session, ready <-chan struct{}) error {
 		if err != nil && s.ctx.Err() == nil {
 			waitLogs()
 			return fmt.Errorf("iPad viewer closed: %w %s", err, logs.diagnostic())
+		}
+		if !viewer.app {
+			// xdg-open can hand off to an existing browser and exit immediately.
+			<-s.ctx.Done()
 		}
 	case <-s.ctx.Done():
 		_ = syscall.Kill(-pid, syscall.SIGTERM)
