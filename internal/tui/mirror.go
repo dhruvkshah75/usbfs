@@ -38,17 +38,13 @@ func (m *Model) mirrorAction(active bool) string {
 		return ""
 	}
 	if active {
+		if m.width < 20 {
+			return "[Alt+m] Stop"
+		}
 		return "[Alt+m] Stop Mirror"
 	}
 	if m.width < 22 {
 		return "[Alt+m] Mirror"
 	}
 	return "[Alt+m] Mirror Screen"
-}
-
-func (m *Model) deviceHeaderPrefix() string {
-	if m.width < 29 {
-		return " "
-	}
-	return " usbfs  "
 }

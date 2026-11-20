@@ -93,9 +93,8 @@ func destinationLabel(index int, path string) string {
 
 func (m *Model) mouse(msg tea.MouseMsg) tea.Cmd {
 	if m.width >= 16 && m.height >= 6 && !m.confirm && m.folder == nil && m.create == nil && m.deleteName == "" &&
-		msg.Y == 0 && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
-		start := len(m.deviceHeaderPrefix())
-		if msg.X >= start && msg.X < start+len(m.mirrorAction(m.mirroring[m.device.USB])) {
+		msg.Y == m.height-1 && msg.Action == tea.MouseActionPress && msg.Button == tea.MouseButtonLeft {
+		if msg.X >= 1 && msg.X <= len(m.mirrorAction(m.mirroring[m.device.USB])) {
 			m.drag = nil
 			return m.toggleMirror()
 		}

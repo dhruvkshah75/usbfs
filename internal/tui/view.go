@@ -89,8 +89,7 @@ func (m *Model) View() string {
 		if m.device.Owner == device.MountOwnerExternalGVfs {
 			mount = "   ● MOUNTED (GVfs)   "
 		}
-		header = styledLine(m.width, foreground(coral, surfaceElevated).Bold(true).Render(m.deviceHeaderPrefix())+
-			foreground(coral, surfaceElevated).Bold(true).Render(m.mirrorAction(active))+badge+
+		header = styledLine(m.width, foreground(coral, surfaceElevated).Bold(true).Render(" usbfs")+badge+
 			foreground(teal, surfaceElevated).Bold(true).Render(mount)+
 			foreground(cream, surfaceElevated).Render(clean(m.device.Kind+" · "+m.device.Name))+
 			foreground(muted, surfaceElevated).Render("   DEVICE DELETE PROTECTED"), surfaceElevated)
@@ -319,14 +318,11 @@ func (m *Model) footer() string {
 	case strings.HasPrefix(status, "✓"):
 		ink = coral
 	}
-	keys := "[F1] Help   [Esc] Exit"
+	keys := " [F1] Help   [Esc] Exit"
 	switch {
 	case m.ready:
 		if m.device.Owner == device.MountOwnerExternalGVfs {
 			keys += "   [r] Retry"
-		}
-		if action := m.mirrorAction(m.mirroring[m.device.USB]); action != "" {
-			keys += "   " + action
 		}
 		keys += "   [Tab] Switch   [Alt+c] Copy"
 	case m.platform != "" && m.width >= 36:
@@ -346,7 +342,11 @@ func (m *Model) footer() string {
 	if m.statusHeight() > 1 {
 		rows = append(rows, line(foreground(ink, surface), m.width, " "+detail))
 	}
-	return strings.Join(append(rows, line(foreground(muted, surfaceElevated), m.width, " "+keys)), "\n")
+	keybar := foreground(muted, surfaceElevated).Render(keys)
+	if action := m.mirrorAction(m.mirroring[m.device.USB]); action != "" {
+		keybar = foreground(coral, surfaceElevated).Bold(true).Render(" "+action) + "  " + keybar
+	}
+	return strings.Join(append(rows, styledLine(m.width, keybar, surfaceElevated)), "\n")
 }
 
 func (m *Model) modal(screen string) string {
