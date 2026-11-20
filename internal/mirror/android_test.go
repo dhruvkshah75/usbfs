@@ -64,17 +64,18 @@ func TestAndroidPrepare(t *testing.T) {
 	target := device.Device{Name: "Phone", USB: device.USBIdentity{Path: "2-1", Serial: "PIXEL"}}
 	backend := Android{}
 	opts := DefaultOptions()
-	if _, _, err := backend.Prepare(context.Background(), target, opts); err == nil || !strings.Contains(err.Error(), "official Genymobile") {
+	if _, err := backend.Prepare(context.Background(), target, opts); err == nil || !strings.Contains(err.Error(), "official Genymobile") {
 		t.Fatalf("missing scrcpy: %v", err)
 	}
 	writeScript(t, filepath.Join(dir, "scrcpy"), "exit 0")
-	if _, _, err := backend.Prepare(context.Background(), target, opts); err == nil || !strings.Contains(err.Error(), "sudo apt install adb") {
+	if _, err := backend.Prepare(context.Background(), target, opts); err == nil || !strings.Contains(err.Error(), "sudo apt install adb") {
 		t.Fatalf("missing adb: %v", err)
 	}
 	adb := filepath.Join(dir, "adb")
 	writeScript(t, adb, `[ "$1 $2" = "devices -l" ] || exit 1
 printf '%s' '`+adbListing+`'`)
-	serial, cmd, err := backend.Prepare(context.Background(), target, opts)
+	plan, err := backend.Prepare(context.Background(), target, opts)
+	serial, cmd := plan.serial, plan.cmd
 	want := []string{"-s", "PIXEL", "--window-title", "USBFS - Pixel 8 Pro", "--turn-screen-off",
 		"--stay-awake", "--power-off-on-close", "--push-target=/sdcard/Download/", "--max-size=1280", "--max-fps=60"}
 	if err != nil || serial != "PIXEL" || !reflect.DeepEqual(cmd.Args[1:], want) {

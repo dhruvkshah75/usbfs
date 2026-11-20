@@ -1,10 +1,6 @@
 package tui
 
-import (
-	tea "github.com/charmbracelet/bubbletea"
-
-	"usbfs/internal/device"
-)
+import tea "github.com/charmbracelet/bubbletea"
 
 type mirrorToggleResult struct{ err error }
 
@@ -20,10 +16,6 @@ func (m *Model) watchMirror() tea.Cmd {
 }
 
 func (m *Model) toggleMirror() tea.Cmd {
-	if m.platform == device.Apple || m.device.Kind == "iOS/iPadOS" {
-		m.message("USB screen mirroring is currently available for Android devices.", false)
-		return nil
-	}
 	target := m.device
 	if target.Kind == "" || m.mirrorPending {
 		return nil
@@ -31,6 +23,8 @@ func (m *Model) toggleMirror() tea.Cmd {
 	m.mirrorPending = true
 	if m.mirroring[target.USB] {
 		m.message("Closing mirror…", false)
+	} else if target.Kind == "iOS/iPadOS" {
+		m.message("Preparing iPad mirror…", false)
 	} else {
 		m.message("Checking Android USB debugging…", false)
 	}

@@ -52,12 +52,12 @@ func TestMirrorControls(t *testing.T) {
 	}
 }
 
-func TestMirrorOnAppleShowsAvailability(t *testing.T) {
+func TestMirrorOnAppleQueuesPreflight(t *testing.T) {
 	m := New(&device.Session{}, t.TempDir())
 	t.Cleanup(m.CloseMirrors)
 	m.ready, m.platform = true, device.Apple
 	m.device = device.Device{Kind: "iOS/iPadOS", Name: "iPad"}
-	if cmd := m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}, Alt: true}); cmd != nil || m.warning || !strings.Contains(m.status, "available for Android") {
+	if cmd := m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'m'}, Alt: true}); cmd == nil || !m.mirrorPending || m.busy || m.status != "Preparing iPad mirror…" {
 		t.Fatalf("unexpected Apple mirror response: %q, warning = %v", m.status, m.warning)
 	}
 }

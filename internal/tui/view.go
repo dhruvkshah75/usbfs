@@ -81,10 +81,6 @@ func (m *Model) View() string {
 	header := line(foreground(coral, surfaceElevated).Bold(true), m.width, " usbfs")
 	if m.device.Kind != "" {
 		active := m.mirroring[m.device.USB]
-		ink := coral
-		if m.device.Kind == "iOS/iPadOS" {
-			ink = muted
-		}
 		badge := ""
 		if active {
 			badge = foreground(teal, surfaceElevated).Render(" ● Mirroring")
@@ -94,7 +90,7 @@ func (m *Model) View() string {
 			mount = "   ● MOUNTED (GVfs)   "
 		}
 		header = styledLine(m.width, foreground(coral, surfaceElevated).Bold(true).Render(m.deviceHeaderPrefix())+
-			foreground(ink, surfaceElevated).Bold(true).Render(m.mirrorAction(active))+badge+
+			foreground(coral, surfaceElevated).Bold(true).Render(m.mirrorAction(active))+badge+
 			foreground(teal, surfaceElevated).Bold(true).Render(mount)+
 			foreground(cream, surfaceElevated).Render(clean(m.device.Kind+" · "+m.device.Name))+
 			foreground(muted, surfaceElevated).Render("   DEVICE DELETE PROTECTED"), surfaceElevated)

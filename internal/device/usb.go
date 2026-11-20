@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// USBIdentity links the mount driver's device to ADB's USB path or serial.
+// USBIdentity identifies the mounted device by USB address, Android serial, or Apple UDID.
 type USBIdentity struct {
 	Path, Serial string
 	deviceNumber int

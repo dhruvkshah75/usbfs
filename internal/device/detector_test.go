@@ -31,7 +31,8 @@ func TestPlatformDriverAndDetection(t *testing.T) {
 			t.Fatalf("%s driver = %q, %v", platform, driver, err)
 		}
 		d, err := find(driver)
-		if err != nil || d.Name != wantName || !reflect.DeepEqual(d.args, wantArgs) {
+		if err != nil || d.Name != wantName || !reflect.DeepEqual(d.args, wantArgs) ||
+			(platform == Apple && d.USB.Serial != wantArgs[1]) {
 			t.Fatalf("%s device = %+v, %v", platform, d, err)
 		}
 	}

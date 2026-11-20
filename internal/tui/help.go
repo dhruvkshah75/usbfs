@@ -28,7 +28,7 @@ var helpCommands = []struct{ keys, action string }{
 	{"", "Connection and exit"},
 	{"a / i", "Choose Android or iPhone/iPad at startup."},
 	{"r / b", "Retry detection or go back to device type while unmounted."},
-	{"Alt+m", "Open or close the Android mirror."},
+	{"Alt+m", "Open or close the device mirror."},
 	{"Esc / Alt+q", "Quit or ask to unmount. q also quits during setup."},
 	{"y / n or Esc", "Confirm or cancel unmount and exit. Active copies must finish first."},
 	{"Ctrl+C", "Exit through the verified unmount cleanup."},

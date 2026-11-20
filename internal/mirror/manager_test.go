@@ -17,8 +17,9 @@ import (
 
 type testBackend func(context.Context, device.Device, Options) (string, *exec.Cmd, error)
 
-func (f testBackend) Prepare(ctx context.Context, d device.Device, opts Options) (string, *exec.Cmd, error) {
-	return f(ctx, d, opts)
+func (f testBackend) Prepare(ctx context.Context, d device.Device, opts Options) (launch, error) {
+	serial, cmd, err := f(ctx, d, opts)
+	return launch{serial: serial, cmd: cmd}, err
 }
 
 var testPhone = device.Device{Name: "Phone", USB: device.USBIdentity{Serial: "serial"}}

@@ -162,7 +162,7 @@ func find(driver string) (Device, error) {
 		if err != nil || name == "" {
 			name = "Apple device"
 		}
-		return Device{Kind: "iOS/iPadOS", Name: name, driver: driver, args: []string{"--udid", id}}, nil
+		return Device{Kind: "iOS/iPadOS", Name: name, USB: USBIdentity{Serial: id}, driver: driver, args: []string{"--udid", id}}, nil
 	}
 	listing, err := command(driver, "-l")
 	if err != nil {

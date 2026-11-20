@@ -136,7 +136,7 @@ Keep the mount directory reserved for `usbfs`. It is used as a filesystem mount 
 | Create a directory or empty file | `Ctrl+N` directory, `Ctrl+F` empty file. Name it and press `Enter`, or press `Esc` to cancel. |
 | Delete a regular Linux file | `Delete`, then `y` to permanently delete or `n` / `Esc` to cancel |
 | Open or close the centered Help window | `F1`. `Esc` also closes it. Scroll with `↑` / `↓`, the mouse wheel, `PgUp` / `PgDn`, or `Home` / `End`. |
-| Toggle Android screen mirroring | `Alt+m` or click **Mirror Screen / Stop Mirror** in the device header. |
+| Toggle device screen mirroring | `Alt+m` or click **Mirror Screen / Stop Mirror** in the device header. |
 | Exit | `Esc` or `Alt+Q`. During a search, the first `Esc` clears it. If a device is mounted, confirm exit with `y` or cancel with `n` / `Esc`. Plain `q` also works on the setup screen. |
 
 The coral highlight shows the active selection. `[DIR]` marks folders and `[LOCKED]` marks entries the pane cannot open. Typing matches names in the focused pane case-insensitively and ignores whitespace. Current-folder matches appear first, and subfolder matches appear below them as the search finds them, starting with nearby folders. Each pane keeps its own query when you switch focus. Changing directories clears that pane's query. If the terminal is narrow, the app stacks the panes or displays just the focused one.
@@ -159,6 +159,8 @@ Downloads are written to a temporary file in the destination and published at th
 
 ## Screen mirroring
 
+### Android
+
 On Ubuntu, install `adb` with `sudo apt install adb` and put the latest official
 `scrcpy` release on `PATH`. Run `usbfs` from your graphical desktop session.
 Optionally install `libnotify-bin` for desktop notifications after a file push.
@@ -175,6 +177,18 @@ same-named file. It handles APK drops as installation requests. The physical
 screen turns off while the mirror is open, and mounting and file browsing
 continue in the TUI. Click **Stop Mirror**, press `Alt+m` again, or close the window
 to stop the mirror. [Scrcpy controls and drag-and-drop behavior](https://github.com/Genymobile/scrcpy/blob/master/doc/control.md)
+
+### iPhone and iPad
+
+Screen mirroring requires iOS or iPadOS 27 or later. Unlock and trust the device, enable **Developer Mode** under **Settings → Privacy & Security**, and connect over USB. Once the device is mounted in `usbfs`, press `Alt+m` or click **Mirror Screen**. The existing file mounts stay available while the mirror runs.
+
+- `USBFS_IPAD_MIRROR_BACKEND=auto` (default) prefers [DeviceHub](https://github.com/jkcoxson/devicehub_rs) when `devicehub_rs` and `ffmpeg` are on `PATH`. Use a current DeviceHub build that accepts a positional UDID and `--no-mcp`. Its native window syncs text between the device and desktop clipboards.
+- `USBFS_IPAD_MIRROR_BACKEND=web` uses [pymobiledevice3's interactive web viewer](https://doronz88.github.io/pymobiledevice3/latest/guides/screen-mirroring/). The web viewer is also the automatic fallback when the native dependencies are missing. It listens on a temporary loopback port and opens an app window in a compatible Chromium browser. The browser needs HEVC support. Turn on **Sync** in the viewer's Clipboard panel and grant permission when prompted.
+- `USBFS_IPAD_MIRROR_BACKEND=devicehub` requires the native driver. Use either override on the launch command, for example `USBFS_IPAD_MIRROR_BACKEND=web usbfs`.
+
+If a current `pymobiledevice3` is available, `usbfs` checks for the Developer Disk Image and attempts to mount it when absent. The first download can take longer than the helper's timeout. If needed, run `pymobiledevice3 mounter auto-mount --udid <UDID>` and retry. Close any foreground app using the camera or microphone before starting the mirror.
+
+Closing a native or dedicated browser window stops its mirror session. If `xdg-open` opens a tab in your default browser, press `Alt+m` to stop the server after closing the tab.
 
 ## Safe exit
 
@@ -256,7 +270,7 @@ The Go executable wraps existing USB mount utilities. Bubble Tea manages input a
 | [`cmd/usbfs`](cmd/usbfs) | Executable, signal handling, and final cleanup |
 | [`internal/device`](internal/device) | Driver selection, platform detection, Apple share discovery, session lock, and verified mount lifecycle |
 | [`internal/fsops`](internal/fsops) | File listing and launch, new-item creation, and non-overwriting transfers |
-| [`internal/mirror`](internal/mirror) | Android ADB preflight, scrcpy process lifecycle, and file-push notifications |
+| [`internal/mirror`](internal/mirror) | Android and Apple mirror preflight, process lifecycle, and Android file-push notifications |
 | [`internal/tui`](internal/tui) | Panes, filtering, keyboard and mouse input, confirmations, status updates, and Help |
 
 ```bash

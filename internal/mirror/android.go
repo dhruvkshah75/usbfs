@@ -50,17 +50,17 @@ func (o Options) args(serial, model string) []string {
 
 type Android struct{}
 
-func (Android) Prepare(ctx context.Context, target device.Device, opts Options) (string, *exec.Cmd, error) {
+func (Android) Prepare(ctx context.Context, target device.Device, opts Options) (launch, error) {
 	scrcpy, err := exec.LookPath("scrcpy")
 	if err != nil {
-		return "", nil, errors.New("scrcpy is missing. Install the official Genymobile scrcpy release and add it to PATH")
+		return launch{}, errors.New("scrcpy is missing. Install the official Genymobile scrcpy release and add it to PATH")
 	}
 	adb, err := exec.LookPath("adb")
 	if err != nil {
-		return "", nil, errors.New("adb is missing. On Ubuntu, run sudo apt install adb")
+		return launch{}, errors.New("adb is missing. On Ubuntu, run sudo apt install adb")
 	}
 	if target.USB.Serial == "" && !target.USB.Present() {
-		return "", nil, errors.New("could not identify the mounted USB device. Reconnect it and reopen usbfs")
+		return launch{}, errors.New("could not identify the mounted USB device. Reconnect it and reopen usbfs")
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -69,14 +69,14 @@ func (Android) Prepare(ctx context.Context, target device.Device, opts Options) 
 	list.WaitDelay = time.Second
 	output, err := list.CombinedOutput()
 	if ctx.Err() != nil {
-		return "", nil, fmt.Errorf("ADB device check: %w", ctx.Err())
+		return launch{}, fmt.Errorf("ADB device check: %w", ctx.Err())
 	}
 	if err != nil {
-		return "", nil, fmt.Errorf("adb devices: %w %s", err, strings.Join(strings.Fields(string(output)), " "))
+		return launch{}, fmt.Errorf("adb devices: %w %s", err, strings.Join(strings.Fields(string(output)), " "))
 	}
 	phone, err := selectADB(parseADB(string(output)), target.USB)
 	if err != nil {
-		return "", nil, err
+		return launch{}, err
 	}
 	model := strings.ReplaceAll(phone.model, "_", " ")
 	if model == "" {
@@ -85,7 +85,7 @@ func (Android) Prepare(ctx context.Context, target device.Device, opts Options) 
 	cmd := exec.Command(scrcpy, opts.args(phone.serial, model)...)
 	// Use the same ADB client for preflight and scrcpy to avoid a daemon restart.
 	cmd.Env = append(cmd.Environ(), "ADB="+adb)
-	return phone.serial, cmd, nil
+	return launch{serial: phone.serial, cmd: cmd}, nil
 }
 
 type adbDevice struct {
