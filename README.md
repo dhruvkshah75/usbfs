@@ -4,7 +4,7 @@
 
 [Install](#install) · [Connect a device](#connect-a-device) · [Controls](#controls) · [Copy and manage files](#copy-and-manage-files) · [Screen mirroring](#screen-mirroring) · [Safe exit](#safe-exit) · [Troubleshooting](#troubleshooting) · [Credits](#credits) · [Development](#development)
 
-![usbfs showing an iPad's Brave file share on the left and Linux files on the right](docs/usbfs-screenshot.png)
+![usbfs mirroring a mounted iPad, with its Brave file share on the left and Linux files on the right](docs/usbfs-screenshot.png)
 
 ## Install
 
@@ -183,21 +183,39 @@ to stop the mirror. [Scrcpy controls and drag-and-drop behavior](https://github.
 
 Screen mirroring requires iOS or iPadOS 27 or later. Unlock and trust the device, enable **Developer Mode** under **Settings → Privacy & Security**, and connect over USB. Once the device is mounted in `usbfs`, press `Alt+m` or click **Mirror Screen** in the bottom bar. The existing file mounts stay available while the mirror runs.
 
+#### DeviceHub native mirror
+
+On Ubuntu, install FFmpeg and the build dependencies, then build and install the native viewer with a recent Rust toolchain. Make sure Cargo's bin directory is on `PATH`. [DeviceHub source and requirements](https://github.com/jkcoxson/devicehub_rs)
+
+```bash
+sudo apt install build-essential pkg-config libasound2-dev ffmpeg
+cargo install --locked --git https://github.com/jkcoxson/devicehub_rs.git
+export PATH="$HOME/.cargo/bin:$PATH"
+devicehub_rs --help
+USBFS_IPAD_MIRROR_BACKEND=devicehub usbfs
+```
+
+Use a build whose help lists a positional UDID and `--no-mcp`. Select **iPhone/iPad** and press `Alt+m` once the device is mounted. DeviceHub opens a native window with touch, swipe, scrolling, keyboard input, and hardware buttons. Recent builds sync text and images through the clipboard. Copy a screenshot as image data on Linux, then use **Paste** in an iPad app that accepts images.
+
+The custom local DeviceHub build at commit `a50c019` defaults to a 1478 × 856 window and starts the iPad in landscape. That customization lives in the local DeviceHub checkout. The upstream install command above gets DeviceHub's standard window and orientation behavior.
+
 | `USBFS_IPAD_MIRROR_BACKEND` | Behavior |
 | --- | --- |
-| `auto` (default) | Uses DeviceHub when `devicehub_rs` and `ffmpeg` are on `PATH`. Uses the web viewer when either is missing. |
-| `web` | Uses `pymobiledevice3` and a browser with HEVC support. Supports sharing text and images through the clipboard. |
-| `devicehub` | Requires the native DeviceHub app and `ffmpeg`. The app automatically shares text between the device and desktop clipboards. Use a build that accepts a positional UDID and `--no-mcp`. |
+| `auto` (default) | Prefers DeviceHub when `devicehub_rs` and `ffmpeg` are on `PATH`. Uses the web viewer when either is missing. |
+| `devicehub` | Requires DeviceHub and FFmpeg. |
+| `web` | Opens the PyMobileDevice3 web viewer in a browser with HEVC support. |
+
+PyMobileDevice3 can still prepare the Developer Disk Image (DDI) for DeviceHub. When it is on `PATH`, `usbfs` checks for the DDI and attempts to mount it when absent. If the first download exceeds the helper's timeout, run `pymobiledevice3 mounter auto-mount --udid <UDID>` and retry. Close any foreground app using the camera or microphone before starting either mirror.
+
+#### PyMobileDevice3 web fallback
 
 For the web viewer, install a current `pymobiledevice3`. If you use `uv`, run `uv tool install --managed-python pymobiledevice3` or `uv tool upgrade pymobiledevice3` for an existing tool installation. Launch with `USBFS_IPAD_MIRROR_BACKEND=web usbfs` to select it explicitly. [PyMobileDevice3 installation](https://github.com/doronz88/pymobiledevice3#install)
 
 The web viewer listens on a temporary loopback port. It opens a dedicated app window in Chromium, Chrome, or Brave when available and uses `xdg-open` otherwise. The viewer opens in screen-only mode, and the app window fits the live screen's aspect ratio with a thin 3-pixel border. Click to tap and focus keyboard input, or drag to swipe. Right-click inside the screen to go Home, or press `F2` to toggle the viewer panels and hardware controls. [PyMobileDevice3 mirroring guide](https://doronz88.github.io/pymobiledevice3/latest/guides/screen-mirroring/#in-the-browser-serve-web)
 
-If a current `pymobiledevice3` is available, `usbfs` checks for the Developer Disk Image and attempts to mount it when absent. The first download can take longer than the helper's timeout. If needed, run `pymobiledevice3 mounter auto-mount --udid <UDID>` and retry. Close any foreground app using the camera or microphone before starting the mirror.
-
 Close the native or dedicated browser window, press `Alt+m`, or click **Stop Mirror** to end the session. If `xdg-open` opened a tab in your default browser, use **Stop Mirror** after closing it so the server also shuts down.
 
-#### Paste a laptop screenshot into an iPad app
+#### Paste a laptop screenshot using the web viewer
 
 1. In the web mirror, press `F2`. Turn on **Sync** in the Clipboard panel and allow browser clipboard access when prompted.
 2. Copy the screenshot as image data on Linux. If you saved it as a file, open it and copy the image itself.
