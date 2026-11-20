@@ -63,7 +63,7 @@ func (w webViewer) command(profile string) *exec.Cmd {
 	}
 	// A dedicated profile gives this window its own process, even if the browser is already open.
 	return exec.Command(w.browser, "--user-data-dir="+profile, "--no-first-run",
-		"--disable-background-mode", "--app="+w.url)
+		"--disable-background-mode", "--window-size=960,720", "--app="+w.url+"#usbfs-app")
 }
 
 func (iPad) Prepare(ctx context.Context, target device.Device, _ Options) (launch, error) {

@@ -51,17 +51,35 @@ html[data-usbfs-screen] #offline-overlay {
 }
 </style>
 <script>
-document.documentElement.setAttribute('data-usbfs-screen', '');
+const usbfsRoot = document.documentElement;
+usbfsRoot.setAttribute('data-usbfs-screen', '');
 window.addEventListener('DOMContentLoaded', () => {
 	const canvas = document.getElementById('c');
 	if (!canvas) return;
+	let fittedRatio;
 	const fit = () => {
-		if (canvas.width && canvas.height) {
-			canvas.style.setProperty('--usbfs-ratio', canvas.width / canvas.height);
-		}
+		// Wait for the decoded frame rather than using the canvas defaults.
+		if (!canvas.hasAttribute('width') || !canvas.hasAttribute('height')) return;
+		const {width, height} = canvas;
+		if (!width || !height) return;
+		const ratio = width / height;
+		canvas.style.setProperty('--usbfs-ratio', ratio);
+		if (location.hash !== '#usbfs-app' || !usbfsRoot.hasAttribute('data-usbfs-screen') ||
+			ratio === fittedRatio) return;
+		fittedRatio = ratio;
+		const frameWidth = outerWidth - innerWidth;
+		const frameHeight = outerHeight - innerHeight;
+		const scale = Math.min(
+			Math.max(innerWidth, innerHeight) / Math.max(width, height),
+			(screen.availWidth - frameWidth) / width,
+			(screen.availHeight - frameHeight) / height,
+		);
+		window.resizeTo(Math.round(width * scale) + frameWidth, Math.round(height * scale) + frameHeight);
 	};
 	fit();
-	new MutationObserver(fit).observe(canvas, {attributeFilter: ['width', 'height']});
+	const observer = new MutationObserver(fit);
+	observer.observe(canvas, {attributeFilter: ['width', 'height']});
+	observer.observe(usbfsRoot, {attributeFilter: ['data-usbfs-screen']});
 });
 for (const type of ['keydown', 'keyup']) {
 	window.addEventListener(type, (event) => {
@@ -69,7 +87,7 @@ for (const type of ['keydown', 'keyup']) {
 		event.preventDefault();
 		event.stopImmediatePropagation();
 		if (type === 'keydown' && !event.repeat) {
-			document.documentElement.toggleAttribute('data-usbfs-screen');
+			usbfsRoot.toggleAttribute('data-usbfs-screen');
 			window.dispatchEvent(new Event('resize'));
 		}
 	}, true);

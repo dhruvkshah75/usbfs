@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -57,7 +58,8 @@ func TestWebViewerSelection(t *testing.T) {
 			if !reflect.DeepEqual(args, []string{viewer.url}) {
 				t.Fatalf("fallback args = %v", args)
 			}
-		} else if !strings.Contains(strings.Join(args, " "), "--app="+viewer.url) {
+		} else if !slices.Contains(args, "--app="+viewer.url+"#usbfs-app") ||
+			!slices.Contains(args, "--window-size=960,720") {
 			t.Fatalf("browser args = %v", args)
 		}
 	}
