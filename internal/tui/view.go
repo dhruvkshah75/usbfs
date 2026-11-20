@@ -81,17 +81,18 @@ func (m *Model) View() string {
 	}
 	header := line(foreground(coral, surfaceElevated).Bold(true), m.width, " usbfs")
 	if m.device.Kind != "" {
+		badgeStyle := foreground(teal, surfaceElevated).Bold(true)
 		active := m.mirroring[m.device.USB]
 		badge := ""
 		if active {
-			badge = foreground(teal, surfaceElevated).Render(" ● Mirroring")
+			badge = badgeStyle.Render("   ● MIRRORING")
 		}
 		mount := "   ● MOUNTED   "
 		if m.device.Owner == device.MountOwnerExternalGVfs {
 			mount = "   ● MOUNTED (GVfs)   "
 		}
 		header = styledLine(m.width, foreground(coral, surfaceElevated).Bold(true).Render(" usbfs")+badge+
-			foreground(teal, surfaceElevated).Bold(true).Render(mount)+
+			badgeStyle.Render(mount)+
 			foreground(cream, surfaceElevated).Render(clean(m.device.Kind+" · "+m.device.Name))+
 			foreground(muted, surfaceElevated).Render("   DEVICE DELETE PROTECTED"), surfaceElevated)
 	}

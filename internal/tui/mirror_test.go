@@ -29,7 +29,7 @@ func TestMirrorControls(t *testing.T) {
 	m.Update(mirrorToggleResult{})
 	m.Update(mirror.Event{USB: m.device.USB, State: mirror.Started, Message: "Mirror started."})
 	rows = strings.Split(ansi.Strip(m.View()), "\n")
-	if !strings.Contains(rows[0], "● Mirroring") || !strings.HasPrefix(rows[len(rows)-1], " [Alt+m] Stop Mirror") {
+	if !strings.Contains(rows[0], "● MIRRORING") || !strings.HasPrefix(rows[len(rows)-1], " [Alt+m] Stop Mirror") {
 		t.Fatal("started event did not update the header badge and bottom-bar action")
 	}
 	msg := tea.MouseMsg{X: 1, Y: 0, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft}
@@ -42,7 +42,7 @@ func TestMirrorControls(t *testing.T) {
 	}
 	m.Update(mirrorToggleResult{})
 	m.Update(mirror.Event{USB: m.device.USB, State: mirror.Exited, Message: "Mirror closed."})
-	if view := m.View(); strings.Contains(view, "● Mirroring") || !strings.Contains(view, "[Alt+m] Mirror Screen") {
+	if view := m.View(); strings.Contains(view, "● MIRRORING") || !strings.Contains(view, "[Alt+m] Mirror Screen") {
 		t.Fatal("closed event did not clear the device indicator")
 	}
 
