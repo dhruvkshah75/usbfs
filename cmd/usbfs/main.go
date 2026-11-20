@@ -9,6 +9,8 @@ import (
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 
 	"usbfs/internal/device"
 	"usbfs/internal/tui"
@@ -56,6 +58,11 @@ func run() (err error) {
 	model := tui.New(session, cwd)
 	defer model.CloseMirrors()
 	program := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithoutSignalHandler())
+	// The terminal paints the pixels outside the character grid with its default background.
+	if background, ok := termenv.BackgroundColor().(termenv.RGBColor); ok {
+		defer fmt.Fprint(os.Stdout, ansi.SetBackgroundColor(string(background)))
+		fmt.Fprint(os.Stdout, ansi.SetBackgroundColor(tui.BackgroundColor))
+	}
 	go func() {
 		<-ctx.Done()
 		program.Quit()

@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	surface         = "#181715"
+	BackgroundColor = "#181715"
+	surface         = BackgroundColor
 	surfaceSoft     = "#1f1e1b"
 	surfaceElevated = "#252320"
 	cream           = "#faf9f5"
